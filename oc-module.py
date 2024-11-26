@@ -8,10 +8,12 @@ import argparse
 import time
 
 # Пути
+SCRIPT_DIR = Path(__file__).parent
 CURRENT_DIR = Path.cwd()
 MODULE_DIR = CURRENT_DIR / "upload"
 OPENCART_DIR = CURRENT_DIR.parent.parent
 JSON_FILE = CURRENT_DIR / "opencart-module.json"
+TEMPLATES_DIR = SCRIPT_DIR / "templates"
 
 # Хранение времени последней модификации файлов
 last_modified_times = {}
@@ -100,7 +102,39 @@ def remove():
                 print(f"Пропущено (папка не найдена): {parent_dir.relative_to(OPENCART_DIR)}")
                 break
             parent_dir = parent_dir.parent
-    print("Удаление завершено.")
+    print("Уда��ение завершено.")
+
+
+def create():
+    """Создание нового модуля по выбранному шаблону."""
+    templates = [d for d in TEMPLATES_DIR.iterdir() if d.is_dir()]
+    if not templates:
+        print("Шаблоны не найдены.")
+        return
+
+    print("Доступные шаблоны:")
+    for i, template in enumerate(templates, 1):
+        print(f"{i}. {template.name}")
+
+    try:
+        template_number = int(input("Введите номер шаблона: ")) - 1
+        if template_number < 0 or template_number >= len(templates):
+            print("Неверный номер шаблона.")
+            return
+    except ValueError:
+        print("Неверный ввод. Введите номер шаблона.")
+        return
+
+    template_dir = templates[template_number]
+    module_name = input("Введите имя нового модуля: ")
+    new_module_dir = CURRENT_DIR / module_name
+
+    if new_module_dir.exists():
+        print(f"Модуль {module_name} уже существует.")
+        return
+
+    shutil.copytree(template_dir, new_module_dir)
+    print(f"Модуль {module_name} создан на основе шаблона {template_dir.name}.")
 
 
 class ChangeHandler(FileSystemEventHandler):
@@ -214,7 +248,7 @@ def show_help():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Скрипт управления модулями OpenCart.")
-    parser.add_argument("command", choices=["init", "install", "dev", "remove", "help"], help="Команда для выполнения")
+    parser.add_argument("command", choices=["init", "install", "dev", "remove", "create", "help"], help="Команда для выполнения")
     parser.add_argument("--script", help="Путь к скрипту для запуска")
     args = parser.parse_args()
 
@@ -226,6 +260,8 @@ if __name__ == "__main__":
         dev()
     elif args.command == "remove":
         remove()
+    elif args.command == "create":
+        create()
     elif args.command == "help":
         show_help()
     

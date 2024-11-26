@@ -6,6 +6,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import argparse
 import time
+import re
 
 # Пути
 SCRIPT_DIR = Path(__file__).parent
@@ -30,6 +31,18 @@ def save_json(data):
     """Сохраняет данные в JSON файл."""
     with open(JSON_FILE, "w") as file:
         json.dump(data, file, indent=4)
+
+
+def to_camel_case(snake_str):
+    """Преобразование snake_case в CamelCase."""
+    components = snake_str.split('_')
+    return ''.join(x.title() for x in components)
+
+
+def to_camel_case_lower(snake_str):
+    """Преобразование snake_case в camelCase."""
+    components = snake_str.split('_')
+    return components[0].lower() + ''.join(x.title() for x in components[1:])
 
 
 def init():
@@ -102,7 +115,7 @@ def remove():
                 print(f"Пропущено (папка не найдена): {parent_dir.relative_to(OPENCART_DIR)}")
                 break
             parent_dir = parent_dir.parent
-    print("Уда��ение завершено.")
+    print("Удаление завершено.")
 
 
 def create():
@@ -126,7 +139,10 @@ def create():
         return
 
     template_dir = templates[template_number]
-    module_name = input("Введите имя нового модуля: ")
+    module_name = input("Введите имя нового модуля (snake_case): ")
+    camel_case_name = to_camel_case(module_name)
+    camel_case_lower_name = to_camel_case_lower(module_name)
+
     new_module_dir = CURRENT_DIR / module_name
 
     if new_module_dir.exists():
@@ -134,6 +150,26 @@ def create():
         return
 
     shutil.copytree(template_dir, new_module_dir)
+
+    # Замена в именах файлов и папок
+    for root, dirs, files in os.walk(new_module_dir):
+        for dir_name in dirs:
+            new_dir_name = dir_name.replace("{{#ModuleName}}", camel_case_name).replace("{{#moduleName}}", camel_case_lower_name).replace("{{#module_name}}", module_name)
+            os.rename(os.path.join(root, dir_name), os.path.join(root, new_dir_name))
+        for file_name in files:
+            new_file_name = file_name.replace("{{#ModuleName}}", camel_case_name).replace("{{#moduleName}}", camel_case_lower_name).replace("{{#module_name}}", module_name)
+            os.rename(os.path.join(root, file_name), os.path.join(root, new_file_name))
+
+    # Замена в содержимом файлов
+    for root, dirs, files in os.walk(new_module_dir):
+        for file_name in files:
+            file_path = os.path.join(root, file_name)
+            with open(file_path, 'r') as file:
+                content = file.read()
+            content = content.replace("{{#ModuleName}}", camel_case_name).replace("{{#moduleName}}", camel_case_lower_name).replace("{{#module_name}}", module_name)
+            with open(file_path, 'w') as file:
+                file.write(content)
+
     print(f"Модуль {module_name} создан на основе шаблона {template_dir.name}.")
 
 

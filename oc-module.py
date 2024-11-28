@@ -262,7 +262,7 @@ def dev():
     observer.start()
     try:
         while True:
-            pass
+            time.sleep(1)  # Добавлено ожидание
     except KeyboardInterrupt:
         observer.stop()
     observer.join()

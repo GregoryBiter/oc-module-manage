@@ -1,0 +1,12 @@
+{
+    "require": {
+        "symfony/filesystem": "^7.2",
+        "symfony/finder": "^7.2",
+        "henrikbjorn/lurker": "^1.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "OcModule\\": "/php_lib"
+        }
+    }
+}

@@ -100,7 +100,3 @@ switch ($command) {
         show_help();
         break;
 }
-
-if ($script_option !== null) {
-    run_script($script_option);
-}

@@ -13,7 +13,7 @@ function load_json() {
  * Сохраняет данные в JSON файл.
  */
 function save_json($data) {
-    file_put_contents(JSON_FILE, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    file_put_contents(JSON_FILE, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 
 /**
@@ -275,4 +275,21 @@ function check_zip_extension() {
         return false;
     }
     return true;
+}
+
+/**
+ * Проверяет соответствие строки шаблону с подстановочными символами *
+ * 
+ * @param string $pattern Шаблон с подстановочными символами *
+ * @param string $string Проверяемая строка
+ * @return bool true если строка соответствует шаблону, иначе false
+ */
+function match_wildcard_pattern($pattern, $string) {
+    // Преобразуем шаблон в регулярное выражение
+    $regex = str_replace(
+        ['.', '*'], 
+        ['\.', '.*'], 
+        $pattern
+    );
+    return preg_match('#^' . $regex . '$#', $string) === 1;
 }

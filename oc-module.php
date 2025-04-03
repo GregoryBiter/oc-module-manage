@@ -5,7 +5,21 @@ require_once __DIR__ . '/php_module/index.php';
 define('SCRIPT_DIR', dirname(__FILE__));
 define('CURRENT_DIR', getcwd());
 define('MODULE_DIR', CURRENT_DIR . '/upload');
-define('OPENCART_DIR', dirname(dirname(CURRENT_DIR)));
+
+// Определение пути к OpenCart
+$custom_path = getcwd() . '/.path-opencart';
+if (file_exists($custom_path)) {
+    $path_content = trim(file_get_contents($custom_path));
+    if (!empty($path_content)) {
+        echo "Используется путь из файла .path-opencart: {$path_content}\n";
+        define('OPENCART_DIR', $path_content);
+    } else {
+        define('OPENCART_DIR', dirname(dirname(CURRENT_DIR)));
+    }
+} else {
+    define('OPENCART_DIR', dirname(dirname(CURRENT_DIR)));
+}
+
 define('JSON_FILE', CURRENT_DIR . '/opencart-module.json');
 define('TEMPLATES_DIR', SCRIPT_DIR . '/templates');
 define('BUILD_FILE', CURRENT_DIR . '/.build-module');

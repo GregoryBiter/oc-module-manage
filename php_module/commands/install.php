@@ -3,6 +3,13 @@
  * Копирование файлов модуля в папку OpenCart и обновление JSON.
  */
 function install($args = []) {
+    // Проверяем существование директории OpenCart
+    if (!is_dir(OPENCART_DIR)) {
+        echo "Ошибка: Директория OpenCart не существует: " . OPENCART_DIR . "\n";
+        echo "Проверьте файл .path-opencart или путь к установке OpenCart.\n";
+        return;
+    }
+
     $data = load_json();
     $files = isset($data['files']) ? $data['files'] : [];
     $new_files = [];

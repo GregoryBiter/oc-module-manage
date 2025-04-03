@@ -6,7 +6,15 @@
 function dev($args = []) {
     global $last_modified_times;
     
+    // Проверяем существование директории OpenCart
+    if (!is_dir(OPENCART_DIR)) {
+        echo "Ошибка: Директория OpenCart не существует: " . OPENCART_DIR . "\n";
+        echo "Проверьте файл .path-opencart или путь к установке OpenCart.\n";
+        return;
+    }
+    
     echo "Запущен режим наблюдения. Нажмите Ctrl+C для выхода.\n";
+    echo "Используется путь к OpenCart: " . OPENCART_DIR . "\n";
     
     // Загружаем данные из JSON
     $data = load_json();

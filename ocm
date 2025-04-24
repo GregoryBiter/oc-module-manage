@@ -1,50 +1,59 @@
 #!/bin/bash
 
-# Название виртуального окружения
+# Директория скрипта
 SCRIPT_DIR=$(dirname "$0")
-VENV_DIR="$SCRIPT_DIR/venv"
 
-# Убедимся, что система обновлена и установим Python
-install_python() {
-    if ! command -v python3 &> /dev/null; then
-        echo "Python3 не найден. Устанавливаем..."
+# Проверка наличия PHP
+install_php() {
+    if ! command -v php &> /dev/null; then
+        echo "PHP не найден. Устанавливаем..."
         sudo apt update
-        sudo apt install -y python3 python3-venv python3-pip
-    fi
-}
-
-# Создание виртуального окружения и установка зависимостей
-setup_venv() {
-    if [ ! -d "$VENV_DIR" ]; then
-        echo "Виртуальное окружение не найдено. Создаём..."
-        python3 -m venv "$VENV_DIR"
-        if [ $? -ne 0 ]; then
-            echo "Ошибка при создании виртуального окружения."
+        sudo apt install -y php php-cli php-json
+        
+        # Проверка успешности установки PHP
+        if ! command -v php &> /dev/null; then
+            echo "Не удалось установить PHP. Пожалуйста, установите PHP вручную."
             exit 1
         fi
-
-        source "$VENV_DIR/bin/activate"
-        # Установим зависимости, если файл requirements.txt существует
-        if [ -f "$SCRIPT_DIR/requirements.txt" ]; then
-            pip install --upgrade pip
-            pip install -r "$SCRIPT_DIR/requirements.txt"
-        else
-            echo "Файл requirements.txt не найден. Пропускаем установку зависимостей."
-        fi
-        deactivate
     fi
 }
 
-# Запуск Python скрипта
+# Проверка необходимых PHP расширений
+check_php_extensions() {
+    local required_extensions=("json" "fileinfo" "zip")
+    local missing_extensions=()
+
+    for ext in "${required_extensions[@]}"; do
+        if ! php -r "exit(extension_loaded('$ext') ? 0 : 1);"; then
+            missing_extensions+=("$ext")
+        fi
+    done
+
+    if [ ${#missing_extensions[@]} -gt 0 ]; then
+        echo "Отсутствуют необходимые расширения PHP: ${missing_extensions[*]}"
+        echo "Устанавливаем..."
+        sudo apt update
+        for ext in "${missing_extensions[@]}"; do
+            sudo apt install -y php-$ext
+        done
+    fi
+}
+
+# Запуск PHP скрипта
 run_script() {
-    # logo - вывод логотипа "OCMU"
-    echo "OCMU - OpenCart Modules Utility"
-    source "$VENV_DIR/bin/activate"
-    python3 "$SCRIPT_DIR/oc-module.py" "${@:-help}"
-    deactivate
+    # Вывод логотипа "OCMU"
+    echo "OCMU - OpenCart Modules Utility (PHP)"
+    
+    # Сделаем скрипт исполняемым, если он еще не исполняемый
+    if [ ! -x "$SCRIPT_DIR/oc-module.php" ]; then
+        chmod +x "$SCRIPT_DIR/oc-module.php"
+    fi
+    
+    # Запуск PHP скрипта с передачей всех аргументов
+    php "$SCRIPT_DIR/oc-module.php" "$@"
 }
 
 # Основной блок
-install_python
-setup_venv
+install_php
+check_php_extensions
 run_script "$@"

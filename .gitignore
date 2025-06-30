@@ -53,3 +53,6 @@ opencart-module.json
 # Development templates (keeping original templates for reference)
 /templates/my_module_dev/
 /templates/test_*/
+
+# Build script logs
+build.log

@@ -1,3 +1,55 @@
 
+# Python virtual environment
 /venv
-/templates/*
+
+# Build artifacts and temporary files
+debian/debhelper-build-stamp
+debian/.debhelper/
+debian/files
+debian/oc-module-manage/
+debian/oc-module-manage.debhelper.log
+debian/oc-module-manage.postrm.debhelper
+debian/oc-module-manage.postinst.debhelper
+debian/oc-module-manage.prerm.debhelper
+debian/oc-module-manage.substvars
+
+# Generated deb packages and build files
+../*.deb
+../*.buildinfo
+../*.changes
+../*.dsc
+../*.tar.xz
+../*.tar.gz
+
+# Build directory
+build-module/
+.build-module
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# OpenCart specific
+.path-opencart
+opencart-module.json
+
+# Development templates (keeping original templates for reference)
+/templates/my_module_dev/
+/templates/test_*/

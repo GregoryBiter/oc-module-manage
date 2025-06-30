@@ -12,7 +12,7 @@ debian/oc-module-manage.postrm.debhelper
 debian/oc-module-manage.postinst.debhelper
 debian/oc-module-manage.prerm.debhelper
 debian/oc-module-manage.substvars
-.deb
+*.deb
 
 # Generated deb packages and build files
 ../*.deb

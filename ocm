@@ -44,13 +44,25 @@ run_script() {
     # Вывод логотипа "OCMU"
     echo "OCMU - OpenCart Modules Utility (PHP)"
     
+    # Определяем путь к основному скрипту
+    # Если запускаем из установленного пакета
+    if [ -f "/usr/share/oc-module-manage/oc-module.php" ]; then
+        PHP_SCRIPT="/usr/share/oc-module-manage/oc-module.php"
+    # Если запускаем из директории разработки
+    elif [ -f "$SCRIPT_DIR/oc-module.php" ]; then
+        PHP_SCRIPT="$SCRIPT_DIR/oc-module.php"
+    else
+        echo "Ошибка: не найден файл oc-module.php"
+        exit 1
+    fi
+    
     # Сделаем скрипт исполняемым, если он еще не исполняемый
-    if [ ! -x "$SCRIPT_DIR/oc-module.php" ]; then
-        chmod +x "$SCRIPT_DIR/oc-module.php"
+    if [ ! -x "$PHP_SCRIPT" ]; then
+        chmod +x "$PHP_SCRIPT"
     fi
     
     # Запуск PHP скрипта с передачей всех аргументов
-    php "$SCRIPT_DIR/oc-module.php" "$@"
+    php "$PHP_SCRIPT" "$@"
 }
 
 # Основной блок

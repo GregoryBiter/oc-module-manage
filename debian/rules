@@ -1,0 +1,13 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Ничего не делаем, это PHP проект без компиляции
+
+override_dh_auto_test:
+	# Пропускаем тесты для простоты
+
+override_dh_auto_install:
+	# Файлы копируются через debian/install

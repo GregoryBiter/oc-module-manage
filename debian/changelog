@@ -1,0 +1,9 @@
+oc-module-manage (1.0.0) unstable; urgency=low
+
+  * Initial release
+  * Added module creation functionality
+  * Added development mode with file watching
+  * Added build and install commands
+  * Added template system for module generation
+
+ -- GregoryBiter <gregorybiter@gmail.com>  Mon, 30 Jun 2025 12:00:00 +0200

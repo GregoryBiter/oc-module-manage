@@ -1,0 +1,17 @@
+#!/bin/bash
+set -e
+
+# Устанавливаем права выполнения
+chmod +x /usr/share/oc-module-manage/oc-module.php
+chmod +x /usr/bin/ocm
+
+# Проверяем наличие PHP
+if ! command -v php >/dev/null 2>&1; then
+    echo "Warning: PHP is not installed or not in PATH"
+    echo "Please install PHP CLI to use oc-module-manage"
+fi
+
+echo "oc-module-manage installed successfully!"
+echo "You can now use 'ocm' command from anywhere in your system."
+
+exit 0

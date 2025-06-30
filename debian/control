@@ -1,0 +1,27 @@
+Source: oc-module-manage
+Section: development
+Priority: optional
+Maintainer: Gregory Biter <gregorybiter@gmail.com>
+Build-Depends: debhelper (>= 10)
+Standards-Version: 4.1.2
+Homepage: https://github.com/GregoryBiter/oc-module-manage
+
+Package: oc-module-manage
+Version: 1.0.0
+Section: development
+Priority: optional
+Architecture: all
+Essential: no
+Depends: php-cli (>= 7.4), php-json
+Maintainer: Your Name <your.email@example.com>
+Homepage: https://github.com/GregoryBiter/oc-module-manage
+Description: OpenCart Module Management Tool
+ A PHP command-line tool for managing OpenCart modules.
+ Available as 'ocm' command after installation.
+ .
+ Features:
+  - Create new OpenCart modules from templates
+  - Install and remove modules
+  - Development mode with file watching
+  - Build modules for distribution
+  - Template-based module generation

@@ -1,0 +1,5 @@
+oc-module.php usr/share/oc-module-manage/
+php_module/* usr/share/oc-module-manage/php_module/
+templates/* usr/share/oc-module-manage/templates/
+scripts/* usr/share/oc-module-manage/scripts/
+ocm usr/bin/

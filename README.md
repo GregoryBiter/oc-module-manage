@@ -20,7 +20,7 @@ OCM - это PHP-инструмент, который упрощает разр�
 
 ```bash
 # Добавляем репозиторий
-echo "deb [trusted=yes] http://cdn.gbit-studio.com/debs/ocm/ ./" | sudo tee /etc/apt/sources.list.d/custom-repo.list
+echo "deb [trusted=yes] http://cdn.gbit-studio.com/debs/ ./" | sudo tee /etc/apt/sources.list.d/custom-repo.list
 
 # Обновляем список пакетов
 sudo apt-get update 

@@ -4,6 +4,8 @@
  * Режим наблюдения за изменениями.
  */
 function dev($args = []) {
+    echo "Выполняется установка...\n";
+    install($args);
     global $last_modified_times;
     
     // Проверяем существование директории OpenCart

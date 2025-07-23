@@ -3,6 +3,20 @@
  * Сборка модуля на основе файла .build-module
  */
 function build($args = [], $archive = false) {
+
+       // Проверяем наличие файла opencart-module.json
+    if (file_exists('opencart-module.json')) {
+        echo "Файл opencart-module.json найден. Выполняется сборка всей текущей папки в ZIP-архив...\n";
+        $archive_path = create_full_folder_archive();
+        if ($archive_path) {
+            echo "Создан архив: {$archive_path}\n";
+        } else {
+            echo "Ошибка при создании архива!\n";
+        }
+        return;
+    }
+
+
     if (!file_exists(BUILD_FILE)) {
         echo "Файл .build-module не найден в текущей директории.\n";
         echo "Хотите создать пример файла .build-module? (y/n): ";
@@ -109,6 +123,46 @@ function create_module_archive() {
     }
 }
 
+
+/**
+ * Создает ZIP-архив из всей текущей папки
+ */
+function create_full_folder_archive() {
+    $module_name = basename(getcwd());
+    $json_file = getcwd() . '/opencart-module.json';
+
+    // Проверяем, существует ли файл opencart-module.json
+    if (file_exists($json_file)) {
+        $json_data = json_decode(file_get_contents($json_file), true);
+        if (isset($json_data['code']) && !empty($json_data['code'])) {
+            $module_name = $json_data['code']; // Используем значение 'code' из JSON
+        }
+    }
+
+    $archive_path = getcwd() . "/{$module_name}.zip";
+
+    // Удаляем существующий архив, если он есть
+    if (file_exists($archive_path)) {
+        unlink($archive_path);
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($archive_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) === TRUE) {
+        $success = add_dir_to_zip($zip, getcwd(), '');
+        $zip->close();
+
+        if ($success && file_exists($archive_path)) {
+            return $archive_path;
+        } else {
+            echo "Ошибка при архивации файлов!\n";
+            return false;
+        }
+    } else {
+        echo "Ошибка при создании архива!\n";
+        return false;
+    }
+}
+
 /**
  * Рекурсивно добавляет директорию в ZIP-архив
  */
@@ -125,8 +179,8 @@ function add_dir_to_zip($zip, $dir, $zip_dir) {
     }
     
     foreach ($files as $file) {
-        if ($file == '.' || $file == '..') continue;
-        
+        if ($file == '.' || $file == '..' || $file == '.git') continue;
+
         $file_path = $dir . '/' . $file;
         $zip_path = $zip_dir . ($zip_dir ? '/' : '') . $file;
         

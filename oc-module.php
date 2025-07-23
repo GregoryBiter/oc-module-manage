@@ -7,17 +7,41 @@ define('CURRENT_DIR', getcwd());
 define('MODULE_DIR', CURRENT_DIR . '/upload');
 
 // Определение пути к OpenCart
-$custom_path = getcwd() . '/.path-opencart';
-if (file_exists($custom_path)) {
-    $path_content = trim(file_get_contents($custom_path));
-    if (!empty($path_content)) {
-        echo "Используется путь из файла .path-opencart: {$path_content}\n";
-        define('OPENCART_DIR', $path_content);
-    } else {
-        define('OPENCART_DIR', dirname(dirname(CURRENT_DIR)));
+function find_opencart_path() {
+    // Проверяем наличие файла .path-opencart
+    $custom_path = getcwd() . '/.path-opencart';
+    if (file_exists($custom_path)) {
+        $path_content = trim(file_get_contents($custom_path));
+        if (!empty($path_content)) {
+            echo "Используется путь из файла .path-opencart: {$path_content}\n";
+            return $path_content;
+        }
     }
+
+    // Если .path-opencart не найден или пуст, ищем через config.php и admin/config.php
+    $current_dir = getcwd();
+    while ($current_dir !== '/') {
+        $config_file = $current_dir . '/config.php';
+        $admin_config_file = $current_dir . '/admin/config.php';
+
+        if (file_exists($config_file) && file_exists($admin_config_file)) {
+            return $current_dir; // Возвращаем путь к OpenCart
+        }
+
+        // Переходим в родительскую директорию
+        $current_dir = dirname($current_dir);
+    }
+
+    return null; // Если путь не найден
+}
+
+// Используем функцию для определения пути
+$opencart_path = find_opencart_path();
+if ($opencart_path) {
+    define('OPENCART_DIR', $opencart_path);
 } else {
-    define('OPENCART_DIR', dirname(dirname(CURRENT_DIR)));
+    echo "Ошибка: Путь к OpenCart не найден.\n";
+    define('OPENCART_DIR', dirname(dirname(CURRENT_DIR))); // Используем путь по умолчанию
 }
 
 define('JSON_FILE', CURRENT_DIR . '/opencart-module.json');

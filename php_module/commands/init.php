@@ -3,22 +3,40 @@
 /**
  * Инициализация списка файлов и запись в JSON.
  */
-function init($args = []) {
+function init($args = [])
+{
     if (file_exists(JSON_FILE)) {
         $data = load_json();
         echo "Файл opencart-module.json уже существует. Обновляем список файлов.\n";
     } else {
-        echo "Введите имя модуля: ";
+        // Получаем имя папки по умолчанию
+        $default_module_name = basename(getcwd());
+
+        echo "Введите имя модуля (по умолчанию: $default_module_name): ";
         $module_name = trim(fgets(STDIN));
+        if (empty($module_name)) {
+            $module_name = $default_module_name;
+        }
+
+        echo "Введите code (по умолчанию: " . strtolower(str_replace(' ', '_', $module_name)) . "): ";
+        $code = trim(fgets(STDIN));
+        if (empty($code)) {
+            $code = strtolower(str_replace(' ', '_', $module_name)); // Преобразуем имя модуля в формат name_module
+        }
+
+        echo "Введите версию: ";
+        $version = trim(fgets(STDIN));
+
         echo "Введите имя создателя: ";
         $creator_name = trim(fgets(STDIN));
         echo "Введите email создателя: ";
         $creator_email = trim(fgets(STDIN));
-        
+
         $data = [
             'module_name' => $module_name,
-            'creator_name' => $creator_name,
-            'creator_email' => $creator_email,
+            'version' => $version ? $version : '1.0.0',
+            'creator_name' => $creator_name ? $creator_name : 'ocm',
+            'creator_email' => $creator_email ? $creator_email : 'GBITStudio',
             'files' => []
         ];
     }
@@ -32,7 +50,7 @@ function init($args = []) {
     // Получаем текущий список файлов
     $current_files = find_all_files(MODULE_DIR, MODULE_DIR);
     $existing_files = isset($data['files']) ? $data['files'] : [];
-    
+
     // Отделяем обычные файлы от шаблонов с символом *
     $wildcard_patterns = [];
     $regular_files = [];
@@ -43,13 +61,13 @@ function init($args = []) {
             $regular_files[] = $file;
         }
     }
-    
+
     // Находим новые файлы (те, которых нет в списке обычных файлов и не соответствуют шаблонам)
     $new_files = [];
     $matched_by_pattern = [];
     foreach ($current_files as $file) {
         $found = in_array($file, $regular_files);
-        
+
         if (!$found) {
             // Проверяем, соответствует ли файл какому-либо шаблону
             $pattern_matched = false;
@@ -60,13 +78,13 @@ function init($args = []) {
                     break;
                 }
             }
-            
+
             if (!$pattern_matched) {
                 $new_files[] = $file;
             }
         }
     }
-    
+
     // Находим удаленные файлы (те, которых больше нет в директории)
     $deleted_files = [];
     foreach ($regular_files as $file) {
@@ -74,19 +92,19 @@ function init($args = []) {
             $deleted_files[] = $file;
         }
     }
-    
+
     // Обновляем список файлов
     $updated_files = array_merge(
         array_diff($regular_files, $deleted_files), // Существующие обычные файлы без удаленных
         $new_files,                                 // Новые файлы
         $wildcard_patterns                          // Сохраняем все шаблоны
     );
-    
+
     // Сортируем список для удобства чтения
     sort($updated_files);
     $data['files'] = $updated_files;
     save_json($data);
-    
+
     // Выводим информацию об обновлении
     echo "Обновление списка файлов завершено:\n";
     if (!empty($new_files)) {
@@ -110,6 +128,6 @@ function init($args = []) {
             echo "  * " . $pattern . "\n";
         }
     }
-    
+
     echo "Всего файлов в списке: " . count($updated_files) . "\n";
 }

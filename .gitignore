@@ -50,6 +50,7 @@ Thumbs.db
 # OpenCart specific
 .path-opencart
 opencart-module.json
+.ocm_files.json
 
 # Development templates (keeping original templates for reference)
 /templates/my_module_dev/

@@ -19,8 +19,7 @@ function dev($args = []) {
     echo "Используется путь к OpenCart: " . OPENCART_DIR . "\n";
     
     // Загружаем данные из JSON
-    $data = load_json();
-    $tracked_files = isset($data['files']) ? $data['files'] : [];
+    $tracked_files = load_files_list();
     
     // Получаем начальное состояние файлов
     $files_map = [];
@@ -37,8 +36,7 @@ function dev($args = []) {
         
         // Сортируем и обновляем список файлов в JSON
         sort($tracked_files);
-        $data['files'] = $tracked_files;
-        save_json($data);
+        save_files_list($tracked_files);
         echo "Список отслеживаемых файлов обновлен в JSON.\n";
     }
     
@@ -74,8 +72,7 @@ function dev($args = []) {
                 if (!in_array($file, $tracked_files)) {
                     $tracked_files[] = $file;
                     sort($tracked_files);
-                    $data['files'] = $tracked_files;
-                    save_json($data);
+                    save_files_list($tracked_files);
                     echo "Файл {$file} добавлен в список отслеживаемых.\n";
                 }
             }
@@ -94,8 +91,7 @@ function dev($args = []) {
                 if ($index !== false) {
                     unset($tracked_files[$index]);
                     $tracked_files = array_values($tracked_files);
-                    $data['files'] = $tracked_files;
-                    save_json($data);
+                    save_files_list($tracked_files);
                     echo "Файл {$file} удален из списка отслеживаемых.\n";
                 }
             }

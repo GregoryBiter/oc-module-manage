@@ -17,6 +17,76 @@ function save_json($data) {
 }
 
 /**
+ * Загружает список файлов из файла .ocm_files.json
+ */
+function load_files_list() {
+    if (file_exists(FILES_JSON)) {
+        $data = json_decode(file_get_contents(FILES_JSON), true);
+        return isset($data['files']) ? $data['files'] : [];
+    }
+    return [];
+}
+
+/**
+ * Сохраняет список файлов в файл .ocm_files.json
+ */
+function save_files_list($files) {
+    $data = ['files' => $files];
+    file_put_contents(FILES_JSON, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
+/**
+ * Загружает метаданные модуля из opencart-module.json
+ */
+function load_module_metadata() {
+    if (file_exists(JSON_FILE)) {
+        $data = json_decode(file_get_contents(JSON_FILE), true);
+        // Исключаем поле files, если оно есть
+        unset($data['files']);
+        return $data;
+    }
+    return [];
+}
+
+/**
+ * Сохраняет метаданные модуля в opencart-module.json
+ */
+function save_module_metadata($metadata) {
+    // Убеждаемся, что поле files не попадет в метаданные
+    unset($metadata['files']);
+    file_put_contents(JSON_FILE, json_encode($metadata, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
+/**
+ * Миграция данных из старого формата в новый
+ * Если в opencart-module.json есть поле 'files', перемещает его в .ocm_files.json
+ */
+function migrate_old_format() {
+    if (!file_exists(JSON_FILE)) {
+        return false;
+    }
+    
+    $data = json_decode(file_get_contents(JSON_FILE), true);
+    if (!$data || !isset($data['files'])) {
+        return false; // Нет поля files, миграция не нужна
+    }
+    
+    // Сохраняем файлы в новый формат
+    $files = $data['files'];
+    save_files_list($files);
+    
+    // Удаляем поле files из метаданных и сохраняем
+    unset($data['files']);
+    save_module_metadata($data);
+    
+    echo "Выполнена миграция данных в новый формат:\n";
+    echo "- Список файлов перемещен в .ocm_files.json\n";
+    echo "- Метаданные модуля остались в opencart-module.json\n";
+    
+    return true;
+}
+
+/**
  * Преобразование snake_case в CamelCase.
  */
 function to_camel_case($snake_str) {
@@ -122,14 +192,12 @@ function sync_file($relative_path) {
     if (copy($src_path, $dest_path)) {
         echo "Синхронизировано: {$dest_path}\n";
         
-        // Обновляем JSON
-        $data = load_json();
-        $files = isset($data['files']) ? $data['files'] : [];
+        // Обновляем список файлов
+        $files = load_files_list();
         if (!in_array($relative_path, $files)) {
             $files[] = $relative_path;
             sort($files); // Сортируем для удобства чтения
-            $data['files'] = $files;
-            save_json($data);
+            save_files_list($files);
             echo "Файл {$relative_path} добавлен в список отслеживаемых.\n";
         }
     } else {
@@ -162,14 +230,13 @@ function remove_file($relative_path) {
         $parent_dir = dirname($parent_dir);
     }
     
-    // Обновляем JSON
-    $data = load_json();
-    $files = isset($data['files']) ? $data['files'] : [];
+    // Обновляем список файлов
+    $files = load_files_list();
     $key = array_search($relative_path, $files);
     if ($key !== false) {
         unset($files[$key]);
-        $data['files'] = array_values($files);
-        save_json($data);
+        $files = array_values($files);
+        save_files_list($files);
     }
 }
 

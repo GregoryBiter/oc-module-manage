@@ -45,6 +45,7 @@ if ($opencart_path) {
 }
 
 define('JSON_FILE', CURRENT_DIR . '/opencart-module.json');
+define('FILES_JSON', CURRENT_DIR . '/.ocm_files.json');
 define('TEMPLATES_DIR', SCRIPT_DIR . '/templates');
 define('BUILD_FILE', CURRENT_DIR . '/.build-module');
 define('BUILD_DIR', CURRENT_DIR . '/build-module/upload');
@@ -132,6 +133,9 @@ switch ($command) {
         break;
     case 'return': // Добавляем новую команду
         return_files($command_args);
+        break;
+    case 'migrate': // Команда миграции данных
+        migrate($command_args);
         break;
     case 'help':
     default:

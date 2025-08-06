@@ -11,16 +11,15 @@ function return_files($args = []) {
         return;
     }
     
-    if (!file_exists(JSON_FILE)) {
-        echo "Файл opencart-module.json не найден. Выполните команду init сначала.\n";
+    if (!file_exists(FILES_JSON)) {
+        echo "Файл .ocm_files.json не найден. Выполните команду init сначала.\n";
         return;
     }
     
-    $data = load_json();
-    $files = isset($data['files']) ? $data['files'] : [];
+    $files = load_files_list();
     
     if (empty($files)) {
-        echo "Список файлов пуст в opencart-module.json. Нечего возвращать.\n";
+        echo "Список файлов пуст в .ocm_files.json. Нечего возвращать.\n";
         return;
     }
     

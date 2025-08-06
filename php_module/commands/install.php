@@ -10,8 +10,7 @@ function install($args = []) {
         return;
     }
 
-    $data = load_json();
-    $files = isset($data['files']) ? $data['files'] : [];
+    $existing_files = load_files_list();
     $new_files = [];
 
     foreach (find_all_files(MODULE_DIR, MODULE_DIR) as $relative_path) {
@@ -27,14 +26,14 @@ function install($args = []) {
         copy($src_path, $dest_path);
         echo "Копирование {$relative_path} -> " . substr($dest_path, strlen(OPENCART_DIR) + 1) . "\n";
         
-        if (!in_array($relative_path, $files)) {
+        if (!in_array($relative_path, $existing_files)) {
             $new_files[] = $relative_path;
         }
     }
 
     if (!empty($new_files)) {
-        $data['files'] = array_merge($files, $new_files);
-        save_json($data);
+        $updated_files = array_merge($existing_files, $new_files);
+        save_files_list($updated_files);
         echo "Добавлены новые файлы: " . implode(', ', $new_files) . "\n";
     }
     echo "Установка завершена.\n";

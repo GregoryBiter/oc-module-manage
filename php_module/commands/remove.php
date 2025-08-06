@@ -4,8 +4,7 @@
  * Удаление файлов из OpenCart на основе JSON.
  */
 function remove($args = []) {
-    $data = load_json();
-    $files = isset($data['files']) ? $data['files'] : [];
+    $files = load_files_list();
     
     foreach ($files as $relative_path) {
         $target_file = OPENCART_DIR . '/' . $relative_path;

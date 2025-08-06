@@ -15,6 +15,7 @@ function show_help() {
   return      Возврат файлов из OpenCart в папку модуля
   create      Создание нового модуля по шаблону
   build       Сборка модуля на основе файла .build-module
+  migrate     Миграция данных из старого формата в новый
   help        Вывод справки
 
 Опции:
@@ -24,6 +25,11 @@ function show_help() {
 Примеры:
   oc-module build -a    Собрать модуль и создать архив
   oc-module return      Вернуть файлы из OpenCart в папку модуля
+  oc-module migrate     Перенести данные из старого формата в новый
+
+Файлы:
+  opencart-module.json  Метаданные модуля (имя, версия, автор и т.д.)
+  .ocm_files.json       Список файлов модуля для отслеживания
 
 HELP;
 }

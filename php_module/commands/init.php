@@ -5,8 +5,12 @@
  */
 function init($args = [])
 {
+    // Проверяем необходимость миграции
+    migrate_old_format();
+    
+    // Проверяем существование файла метаданных
     if (file_exists(JSON_FILE)) {
-        $data = load_json();
+        $metadata = load_module_metadata();
         echo "Файл opencart-module.json уже существует. Обновляем список файлов.\n";
     } else {
         // Получаем имя папки по умолчанию
@@ -32,13 +36,16 @@ function init($args = [])
         echo "Введите email создателя: ";
         $creator_email = trim(fgets(STDIN));
 
-        $data = [
+        $metadata = [
             'module_name' => $module_name,
+            'code' => $code,
             'version' => $version ? $version : '1.0.0',
             'creator_name' => $creator_name ? $creator_name : 'ocm',
-            'creator_email' => $creator_email ? $creator_email : 'GBITStudio',
-            'files' => []
+            'creator_email' => $creator_email ? $creator_email : 'GBITStudio'
         ];
+        
+        // Сохраняем метаданные
+        save_module_metadata($metadata);
     }
 
     // Проверяем существование директории модуля
@@ -49,7 +56,7 @@ function init($args = [])
 
     // Получаем текущий список файлов
     $current_files = find_all_files(MODULE_DIR, MODULE_DIR);
-    $existing_files = isset($data['files']) ? $data['files'] : [];
+    $existing_files = load_files_list();
 
     // Отделяем обычные файлы от шаблонов с символом *
     $wildcard_patterns = [];
@@ -102,8 +109,7 @@ function init($args = [])
 
     // Сортируем список для удобства чтения
     sort($updated_files);
-    $data['files'] = $updated_files;
-    save_json($data);
+    save_files_list($updated_files);
 
     // Выводим информацию об обновлении
     echo "Обновление списка файлов завершено:\n";

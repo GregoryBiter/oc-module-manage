@@ -1,6 +1,0 @@
-#!/bin/bash
-set -e
-
-echo "oc-module-manage removed successfully!"
-
-exit 0

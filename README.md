@@ -16,41 +16,17 @@ OCM - это PHP-инструмент, который упрощает разр�
 
 ## Установка
 
-### Способ 1: Из репозитория (рекомендуется)
+Для установки OCM выполните следующую команду в терминале:
 
 ```bash
-# Добавляем репозиторий
-echo "deb [trusted=yes] http://cdn.gbit-studio.com/debs/ ./" | sudo tee /etc/apt/sources.list.d/custom-repo.list
-
-# Обновляем список пакетов
-sudo apt-get update 
-
-# Устанавливаем OCM
-sudo apt-get install oc-module-manage
+curl -sL https://raw.githubusercontent.com/GregoryBiter/oc-module-manage/master/install.sh | bash
 ```
 
-### Способ 2: Установка из .deb файла
+Или, если вы уже клонировали репозиторий:
 
 ```bash
-# Скачайте .deb файл и установите
-sudo dpkg -i oc-module-manage_1.0.0_all.deb
-
-# Если есть проблемы с зависимостями, выполните:
-sudo apt-get install -f
-```
-
-### Способ 3: Из исходного кода
-
-```bash
-# Клонируйте репозиторий
-git clone https://github.com/GregoryBiter/oc-module-manage.git
-cd oc-module-manage
-
-# Соберите deb пакет
-./build.sh
-
-# Установите собранный пакет
-sudo dpkg -i ../oc-module-manage_*.deb
+chmod +x install.sh
+./install.sh
 ```
 
 ## Требования
@@ -179,12 +155,9 @@ ocm build
 ocm build -a
 ```
 
-### Создание deb пакета
+### Обновление OCM
 
-```bash
-# Сборка deb пакета (для разработчиков)
-./build.sh
-```
+Для обновления просто запустите команду установки еще раз.
 
 ## Устранение неполадок
 

@@ -55,16 +55,38 @@ $last_modified_times = [];
 
 
 /**
- * Запуск указанного скрипта.
+ * Запуск указанного скрипта из папки scripts.
  */
-function run_script($script_path) {
-    $path = __DIR__ . '/scripts/' . $script_path;
-    if (file_exists($path) && is_file($path)) {
-
-        include($path);
-    } else {
-        echo "Скрипт {$path} не найден.\n";
+function run_script($script_name) {
+    $scripts_dir = SCRIPT_DIR . '/scripts/';
+    $path = $scripts_dir . $script_name;
+    
+    // Если файл не найден, пробуем найти с расширениями
+    if (!file_exists($path)) {
+        if (file_exists($path . '.php')) {
+            $path .= '.php';
+        } elseif (file_exists($path . '.sh')) {
+            $path .= '.sh';
+        }
     }
+
+    if (file_exists($path) && is_file($path)) {
+        $extension = pathinfo($path, PATHINFO_EXTENSION);
+        echo "Запуск скрипта: " . basename($path) . "\n";
+        
+        if ($extension === 'php') {
+            passthru("php " . escapeshellarg($path));
+        } elseif ($extension === 'sh') {
+            chmod($path, 0755);
+            passthru("bash " . escapeshellarg($path));
+        } else {
+            chmod($path, 0755);
+            passthru(escapeshellarg($path));
+        }
+    } else {
+        return false;
+    }
+    return true;
 }
 
 // Определяем основную команду из аргументов
@@ -139,6 +161,10 @@ switch ($command) {
         break;
     case 'help':
     default:
+        // Если это не хелп, пробуем найти такой скрипт
+        if ($command !== 'help' && run_script($command)) {
+            break;
+        }
         show_help();
         break;
 }

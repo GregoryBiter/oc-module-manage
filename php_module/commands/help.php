@@ -32,4 +32,17 @@ function show_help() {
   .ocm_files.json       Список файлов модуля для отслеживания
 
 HELP;
+
+    // Список скриптов
+    $scripts_dir = SCRIPT_DIR . '/scripts/';
+    if (is_dir($scripts_dir)) {
+        $scripts = array_diff(scandir($scripts_dir), array('.', '..'));
+        if (!empty($scripts)) {
+            echo "Скрипты (в папке scripts):\n";
+            foreach ($scripts as $script) {
+                echo "  " . str_pad(basename($script), 12) . " Запуск кастомного скрипта\n";
+            }
+            echo "\n";
+        }
+    }
 }

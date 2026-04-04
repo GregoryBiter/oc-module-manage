@@ -2,7 +2,7 @@
 <?php
 require_once __DIR__ . '/php_module/index.php';
 // Пути
-define('SCRIPT_DIR', dirname(__FILE__));
+if (!defined('SCRIPT_DIR')) define('SCRIPT_DIR', dirname(__FILE__));
 define('CURRENT_DIR', getcwd());
 define('MODULE_DIR', CURRENT_DIR . '/upload');
 
@@ -89,19 +89,21 @@ function run_script($script_name) {
     return true;
 }
 
-// Определяем основную команду из аргументов
-$command = isset($argv[1]) ? $argv[1] : 'help';
+// Инициализация приложения в стиле Artisan
+$app = new \Ocm\Base\Application();
 
-// Проверяем, есть ли флаг -a в аргументах
-$archive_flag = false;
-foreach ($argv as $arg) {
-    if ($arg === '-a') {
-        $archive_flag = true;
-        break;
-    }
-}
+// Регистрация команд
+$app->add(new \Ocm\Commands\InitCommand());
+$app->add(new \Ocm\Commands\InstallCommand());
+$app->add(new \Ocm\Commands\DevCommand());
+$app->add(new \Ocm\Commands\RemoveCommand());
+$app->add(new \Ocm\Commands\ReturnCommand());
+$app->add(new \Ocm\Commands\CreateCommand());
+$app->add(new \Ocm\Commands\BuildCommand());
+$app->add(new \Ocm\Commands\MigrateCommand());
+$app->add(new \Ocm\Commands\HelpCommand());
 
-// Обработка опции --script
+// Обработка опции --script (для обратной совместимости)
 $script_option = null;
 for ($i = 1; $i < count($argv); $i++) {
     if ($argv[$i] === '--script' && isset($argv[$i+1])) {
@@ -110,61 +112,10 @@ for ($i = 1; $i < count($argv); $i++) {
     }
 }
 
-// Фильтруем аргументы, оставляя только команды и их параметры
-$command_args = [];
-foreach ($argv as $i => $arg) {
-    // Пропускаем имя скрипта и основную команду
-    if ($i <= 1) continue;
-    // Пропускаем опции с --
-    if (strpos($arg, '--') === 0) continue;
-    // Пропускаем аргумент после --script
-    if ($arg === '--script') {
-        $i++; // Пропускаем следующий аргумент
-        continue;
-    }
-    // Пропускаем опции с -
-    if (strpos($arg, '-') === 0 && strlen($arg) == 2) continue;
-    
-    $command_args[] = $arg;
-}
-
-
 if ($script_option !== null) {
     run_script($script_option);
     exit;
 }
 
-switch ($command) {
-    case 'init':
-        init($command_args);
-        break;
-    case 'install':
-        install($command_args);
-        break;
-    case 'dev':
-        dev($command_args);
-        break;
-    case 'remove':
-        remove($command_args);
-        break;
-    case 'create':
-        create($command_args);
-        break;
-    case 'build':
-        build($command_args, $archive_flag);
-        break;
-    case 'return': // Добавляем новую команду
-        return_files($command_args);
-        break;
-    case 'migrate': // Команда миграции данных
-        migrate($command_args);
-        break;
-    case 'help':
-    default:
-        // Если это не хелп, пробуем найти такой скрипт
-        if ($command !== 'help' && run_script($command)) {
-            break;
-        }
-        show_help();
-        break;
-}
+// Запуск основного цикла приложения
+$app->run($argv);

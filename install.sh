@@ -100,7 +100,11 @@ main() {
     
     # Проверка PHP зависимостей через сам ocm
     log_info "Проверка PHP зависимостей..."
-    "$EXECUTABLE" help > /dev/null || log_warning "Возможно, требуются дополнительные PHP расширения."
+    if ! "$EXECUTABLE" help &> /dev/null; then
+        log_warning "PHP или необходимые расширения (json, zip, fileinfo) не найдены."
+        log_info "Пожалуйста, установите их для корректной работы OCM."
+        "$EXECUTABLE" help 2>&1 | grep -E "\[ERROR\]|sudo apt install" || true
+    fi
     
     check_path
 }

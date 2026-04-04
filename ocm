@@ -4,17 +4,11 @@
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
 # Проверка наличия PHP
-install_php() {
+check_php() {
     if ! command -v php &> /dev/null; then
-        echo "PHP не найден. Устанавливаем..."
-        sudo apt update
-        sudo apt install -y php php-cli php-json
-        
-        # Проверка успешности установки PHP
-        if ! command -v php &> /dev/null; then
-            echo "Не удалось установить PHP. Пожалуйста, установите PHP вручную."
-            exit 1
-        fi
+        echo -e "\033[0;31m[ERROR]\033[0m PHP не найден. Пожалуйста, установите php-cli."
+        echo "Пример для Ubuntu: sudo apt install php-cli php-json php-zip"
+        exit 1
     fi
 }
 
@@ -24,18 +18,16 @@ check_php_extensions() {
     local missing_extensions=()
 
     for ext in "${required_extensions[@]}"; do
-        if ! php -r "exit(extension_loaded('$ext') ? 0 : 1);"; then
+        if ! php -r "exit(extension_loaded('$ext') ? 0 : 1);" &>/dev/null; then
             missing_extensions+=("$ext")
         fi
     done
 
     if [ ${#missing_extensions[@]} -gt 0 ]; then
-        echo "Отсутствуют необходимые расширения PHP: ${missing_extensions[*]}"
-        echo "Устанавливаем..."
-        sudo apt update
-        for ext in "${missing_extensions[@]}"; do
-            sudo apt install -y php-$ext
-        done
+        echo -e "\033[0;31m[ERROR]\033[0m Отсутствуют необходимые расширения PHP: ${missing_extensions[*]}"
+        echo "Пожалуйста, установите их. Пример для Ubuntu:"
+        echo "sudo apt install $(printf 'php-%s ' "${missing_extensions[@]}")"
+        exit 1
     fi
 }
 
@@ -66,6 +58,6 @@ run_script() {
 }
 
 # Основной блок
-install_php
+check_php
 check_php_extensions
 run_script "$@"

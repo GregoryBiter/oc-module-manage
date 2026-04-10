@@ -13,22 +13,25 @@ class InstallCommand extends Command {
     protected $description = 'Копирование файлов модуля в папку OpenCart';
 
     public function handle(Input $input, Output $output) {
-        $install_xml = get_install_xml_path();
-        if (!is_file($install_xml)) {
-            $output->error("install.xml обязателен. Файл не найден: {$install_xml}");
-            return;
+        $config = $this->app->getService('config');
+        $module = $this->app->getService('module');
+        $fileSystem = $this->app->getService('filesystem');
+
+        $install_xml_path = $this->app->getService('opencart')->getInstallXmlPath();
+        if (!is_file($install_xml_path)) {
+            $output->comment("Подсказка: install.xml не найден, пропуск модификаторов.");
         }
 
-        $metadata = load_module_metadata();
+        $metadata = $config->loadModuleMetadata();
         $errors = [];
-        if (!validate_module_metadata_contract($metadata, $errors)) {
+        if (!$config->validateMetadata($metadata, $errors)) {
             foreach ($errors as $error) {
                 $output->error($error);
             }
             return;
         }
 
-        $opencart_paths = defined('OPENCART_PATHS') ? OPENCART_PATHS : [OPENCART_DIR];
+        $opencart_paths = defined('OPENCART_PATHS') ? OPENCART_PATHS : [$this->app->getService('config')->findOpenCartPaths()[0]];
         
         foreach ($opencart_paths as $target_path) {
             if (!is_dir($target_path)) {
@@ -44,12 +47,17 @@ class InstallCommand extends Command {
     }
 
     private function installToPath($target_path, Output $output) {
-        $existing_files = load_files_list();
+        $config = $this->app->getService('config');
+        $fileSystem = $this->app->getService('filesystem');
+        $module = $this->app->getService('module');
+
+        $existing_files = $config->loadFilesList();
         $new_files = [];
-        $all_current_files = find_all_files(MODULE_DIR, MODULE_DIR);
+        $moduleDir = $config->getModuleDir();
+        $all_current_files = $fileSystem->findAllFiles($moduleDir, $moduleDir);
 
         foreach ($all_current_files as $relative_path) {
-            $src_path = MODULE_DIR . '/' . $relative_path;
+            $src_path = $moduleDir . '/' . $relative_path;
             $dest_path = $target_path . '/' . $relative_path;
             
             // Создание директории если не существует
@@ -69,16 +77,17 @@ class InstallCommand extends Command {
         // Обновляем локальный список файлов
         if (!empty($new_files)) {
             $updated_files = array_unique(array_merge($existing_files, $new_files));
-            save_files_list($updated_files);
+            $config->saveFilesList($updated_files);
         }
 
         // Вызов OpenCart Integration (OCMOD) - install.xml
-        if (!handle_ocmod($target_path)) {
-            $output->error("  Не удалось применить install.xml в {$target_path}");
+        if (!$module->handleOcmod($target_path)) {
+            // handleOcmod возвращает true если файла нет (пропуск) или false только при реальной ошибке БД
             return;
         }
 
-        // Запись в базу (ocm_*) - функции из functions.php
-        sync_with_db($target_path, $all_current_files);
+        // Запись в базу (ocm_*)
+        $module->syncWithDb($target_path, $all_current_files);
     }
+
 }

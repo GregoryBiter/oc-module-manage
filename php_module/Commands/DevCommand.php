@@ -13,26 +13,34 @@ class DevCommand extends Command {
     protected $description = 'Режим наблюдения за изменениями (development mode)';
 
     public function handle(Input $input, Output $output) {
+        $fileSystem = $this->app->getService('filesystem');
+        $config = $this->app->getService('config');
+        $module = $this->app->getService('module');
+        $openCart = $this->app->getService('opencart');
+
         $output->info("Выполняется первичная установка...");
         
         // Вызов установки
         $installCmd = new InstallCommand();
+        $installCmd->setApplication($this->app);
         $installCmd->handle($input, $output);
         
-        $opencart_paths = defined('OPENCART_PATHS') ? OPENCART_PATHS : [OPENCART_DIR];
+        $opencart_paths = defined('OPENCART_PATHS') ? OPENCART_PATHS : [$config->findOpenCartPaths()[0]];
         
         $output->comment("\nЗапущен режим наблюдения. Нажмите Ctrl+C для выхода.");
-        $output->writeln("Отслеживаемые пути:\n - " . implode("\n - ", $opencart_paths));
+        $output->writeln("Наблюдаем за папкой модуля: " . getcwd());
+        $output->writeln("Пути синхронизации (OpenCart):\n - " . implode("\n - ", $opencart_paths));
         
         // Начальное состояние файлов в upload/
+        $moduleDir = $config->getModuleDir();
         $files_map = [];
-        $all_files = find_all_files(MODULE_DIR, MODULE_DIR);
+        $all_files = $fileSystem->findAllFiles($moduleDir, $moduleDir);
         foreach ($all_files as $file) {
-            $files_map[$file] = filemtime(MODULE_DIR . '/' . $file);
+            $files_map[$file] = filemtime($moduleDir . '/' . $file);
         }
         
         // Начальное состояние install.xml
-        $ocmod_file = CURRENT_DIR . '/install.xml';
+        $ocmod_file = getcwd() . '/install.xml';
         $ocmod_mtime = file_exists($ocmod_file) ? filemtime($ocmod_file) : 0;
         
         // Основной цикл наблюдения
@@ -45,18 +53,18 @@ class DevCommand extends Command {
                 if ($current_ocmod_mtime != $ocmod_mtime) {
                     $output->info("\n[CHANGE] Обнаружены изменения в install.xml. Обновление модификаторов...");
                     foreach ($opencart_paths as $target_path) {
-                        handle_ocmod($target_path);
-                        sync_with_db($target_path, array_keys($files_map));
+                        $module->handleOcmod($target_path);
+                        $module->syncWithDb($target_path, array_keys($files_map));
                     }
                     $ocmod_mtime = $current_ocmod_mtime;
                 }
             }
             
             // 2. Проверка файлов в upload/
-            $current_files = find_all_files(MODULE_DIR, MODULE_DIR);
+            $current_files = $fileSystem->findAllFiles($moduleDir, $moduleDir);
             $current_files_map = [];
             foreach ($current_files as $file) {
-                $current_files_map[$file] = filemtime(MODULE_DIR . '/' . $file);
+                $current_files_map[$file] = filemtime($moduleDir . '/' . $file);
             }
             
             // Ищем изменения или новые файлы
@@ -75,7 +83,7 @@ class DevCommand extends Command {
                 if (!isset($current_files_map[$file])) {
                     $output->comment("\n[DELETE] Файл удален: {$file}");
                     foreach ($opencart_paths as $target_path) {
-                        $this->removeFileFromPath($file, $target_path, $output);
+                        $this->removeFileFromPath($file, $target_path, $output, $opencart_paths[0]);
                     }
                     unset($files_map[$file]);
                 }
@@ -86,9 +94,13 @@ class DevCommand extends Command {
     }
 
     private function syncFileToPath($relative_path, $target_path, Output $output) {
+        $fileSystem = $this->app->getService('filesystem');
+        $config = $this->app->getService('config');
+
         if (!is_dir($target_path)) return;
         
-        $src_path = MODULE_DIR . '/' . $relative_path;
+        $src_path = $config->getModuleDir() . '/' . $relative_path;
+
         $dest_path = $target_path . '/' . $relative_path;
         
         $dest_dir = dirname($dest_path);
@@ -100,16 +112,19 @@ class DevCommand extends Command {
             $output->writeln("  Синхронизировано в {$target_path}: {$relative_path}");
             
             // Обновляем локальный список если нужно
-            $files = load_files_list();
+            $files = $config->loadFilesList();
             if (!in_array($relative_path, $files)) {
                 $files[] = $relative_path;
                 sort($files);
-                save_files_list($files);
+                $config->saveFilesList($files);
             }
         }
     }
     
-    private function removeFileFromPath($relative_path, $target_path, Output $output) {
+    private function removeFileFromPath($relative_path, $target_path, Output $output, $main_path) {
+        $fileSystem = $this->app->getService('filesystem');
+        $config = $this->app->getService('config');
+
         $dest_path = $target_path . '/' . $relative_path;
         
         if (file_exists($dest_path)) {
@@ -128,12 +143,15 @@ class DevCommand extends Command {
             }
         }
     
-        // Обновляем локальный список если нужно
-        $files = load_files_list();
-        $key = array_search($relative_path, $files);
-        if ($key !== false) {
-            unset($files[$key]);
-            save_files_list(array_values($files));
+        // Обновляем локальный список если нужно (только один раз для основного пути)
+        if ($target_path === $main_path) {
+            $files = $config->loadFilesList();
+            $key = array_search($relative_path, $files);
+            if ($key !== false) {
+                unset($files[$key]);
+                $config->saveFilesList(array_values($files));
+            }
         }
     }
+
 }

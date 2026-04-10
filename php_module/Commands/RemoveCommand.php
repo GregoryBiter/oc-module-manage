@@ -13,7 +13,8 @@ class RemoveCommand extends Command {
     protected $description = 'Удаление файлов модуля из OpenCart';
 
     public function handle(Input $input, Output $output) {
-        $opencart_paths = defined('OPENCART_PATHS') ? OPENCART_PATHS : [OPENCART_DIR];
+        $config = $this->app->getService('config');
+        $opencart_paths = defined('OPENCART_PATHS') ? OPENCART_PATHS : [$config->findOpenCartPaths()[0]];
     
         foreach ($opencart_paths as $target_path) {
             if (!is_dir($target_path)) {
@@ -29,24 +30,27 @@ class RemoveCommand extends Command {
     }
     
     private function removeFromPath($target_path, Output $output) {
-        $identity = resolve_module_identity($target_path);
-        $module_code = $identity['code'] ?: basename(CURRENT_DIR);
+        $config = $this->app->getService('config');
+        $module = $this->app->getService('module');
+        $openCart = $this->app->getService('opencart');
+        $fileSystem = $this->app->getService('filesystem');
 
-        $files = load_files_list();
+        $identity = $module->resolveIdentity($target_path);
+        $module_code = $identity['code'] ?: basename(getcwd());
+
+        $files = $config->loadFilesList();
         if (empty($files)) {
             $output->comment("Нет записей о скопированных файлах в .ocm_files.json");
         } else {
             foreach ($files as $relative_path) {
-                $dest_path = $target_path . '/' . $relative_path;
-                if (file_exists($dest_path) && !is_dir($dest_path)) {
-                    unlink($dest_path);
+                if ($fileSystem->removeFile($relative_path)) {
                     $output->writeln("  Удалено: {$relative_path}");
                 }
             }
         }
     
         // Удаляем сам модуль из БД
-        $db = get_opencart_db_for_path($target_path);
+        $db = $openCart->getOpenCartDbForPath($target_path);
         if ($db) {
             $code = $module_code;
             
@@ -57,10 +61,11 @@ class RemoveCommand extends Command {
                 $output->info("  Удален OCMOD-модификатор из БД.");
             }
     
-            remove_module_from_db($target_path, $code);
+            $openCart->removeModuleFromDb($target_path, $code);
             $output->info("  Удалены записи модуля из таблиц ocm_*.");
         }
     
-        refresh_modifications($target_path);
+        $openCart->refreshModifications($target_path);
     }
+
 }

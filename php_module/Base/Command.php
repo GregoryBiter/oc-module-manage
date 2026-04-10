@@ -8,7 +8,7 @@ namespace Ocm\Base;
 abstract class Command {
     protected $name;
     protected $description = '';
-    protected $application;
+    protected $app;
 
     /**
      * Конструктор.
@@ -42,7 +42,7 @@ abstract class Command {
      * Установить приложение.
      */
     public function setApplication($app) {
-        $this->application = $app;
+        $this->app = $app;
     }
 
     /**

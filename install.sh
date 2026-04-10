@@ -33,6 +33,12 @@ check_system_deps() {
         exit 1
     fi
     
+    if ! command -v composer &> /dev/null; then
+        log_error "Требуется composer для установки зависимостей."
+        log_info "Установите его: https://getcomposer.org/download/"
+        exit 1
+    fi
+    
     if ! command -v tar &> /dev/null; then
         log_error "Требуется tar для распаковки."
         exit 1
@@ -40,7 +46,14 @@ check_system_deps() {
 }
 
 install_ocm() {
-    log_info "Подготовка к установке..."
+    if [ -d "$INSTALL_DIR" ]; then
+        log_info "Обнаружена существующая установка. Выполняется обновление..."
+        IS_UPDATE=true
+    else
+        log_info "Подготовка к установке..."
+        IS_UPDATE=false
+    fi
+
     mkdir -p "$INSTALL_DIR"
     mkdir -p "$BIN_DIR"
     rm -rf "$TMP_DIR"
@@ -57,9 +70,13 @@ install_ocm() {
     tar -xzf "$TMP_DIR/ocm.tar.gz" -C "$TMP_DIR" --strip-components=1
     
     log_info "Копирование файлов в $INSTALL_DIR..."
-    # Удаляем старые файлы перед копированием
-    rm -rf "$INSTALL_DIR"/*
-    cp -r "$TMP_DIR"/* "$INSTALL_DIR/"
+    # При обновлении удаляем только ядро (php_module), чтобы не затереть пользовательские шаблоны и скрипты
+    rm -rf "$INSTALL_DIR/php_module"
+    rm -rf "$INSTALL_DIR/vendor" # Будет переустановлен через composer install
+    
+    # Копируем всё поверх (слияние). Существующие файлы будут обновлены, новые добавлены, 
+    # а пользовательские файлы в templates/ и scripts/ останутся нетронутыми.
+    cp -rp "$TMP_DIR"/* "$INSTALL_DIR/"
     
     log_info "Настройка прав доступа..."
     chmod +x "$INSTALL_DIR/ocm"
@@ -67,6 +84,10 @@ install_ocm() {
     
     log_info "Создание символьной ссылки в $BIN_DIR..."
     ln -sf "$INSTALL_DIR/ocm" "$EXECUTABLE"
+    
+    log_info "Установка PHP-зависимостей через Composer..."
+    cd "$INSTALL_DIR"
+    composer install --no-dev --optimize-autoloader
     
     # Очистка
     rm -rf "$TMP_DIR"
@@ -90,13 +111,21 @@ main() {
     check_system_deps
     install_ocm
     
-    echo -e "${GREEN}"
-    echo "=================================================="
-    echo "  Установка успешно завершена!"
-    echo "=================================================="
-    echo -e "${NC}"
-    
-    log_success "Команда 'ocm' теперь доступна из терминала."
+    if [ "$IS_UPDATE" = true ]; then
+        echo -e "${GREEN}"
+        echo "=================================================="
+        echo "  Обновление успешно завершено!"
+        echo "=================================================="
+        echo -e "${NC}"
+        log_success "OCM успешно обновлен до последней версии."
+    else
+        echo -e "${GREEN}"
+        echo "=================================================="
+        echo "  Установка успешно завершена!"
+        echo "=================================================="
+        echo -e "${NC}"
+        log_success "Команда 'ocm' теперь доступна из терминала."
+    fi
     
     # Проверка PHP зависимостей через сам ocm
     log_info "Проверка PHP зависимостей..."

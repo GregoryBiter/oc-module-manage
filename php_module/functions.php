@@ -154,8 +154,69 @@ function get_opencart_db() {
  * Вспомогательная функция для получения БД по пути
  */
 function get_opencart_db_for_path($target_path) {
-    // Временно используем глобальный bootstrap
-    return get_opencart_db();
+    static $connections = [];
+
+    $real_target_path = realpath($target_path);
+    if (!$real_target_path) {
+        return null;
+    }
+
+    if (isset($connections[$real_target_path])) {
+        return $connections[$real_target_path];
+    }
+
+    $config_file = $real_target_path . '/config.php';
+    if (!file_exists($config_file)) {
+        return null;
+    }
+
+    $config_content = file_get_contents($config_file);
+    if ($config_content === false) {
+        return null;
+    }
+
+    $extract = function ($name) use ($config_content) {
+        $pattern = "/define\\('\\Q{$name}\\E'\\s*,\\s*'([^']*)'\\)/";
+        if (preg_match($pattern, $config_content, $matches)) {
+            return $matches[1];
+        }
+        return null;
+    };
+
+    $driver = $extract('DB_DRIVER');
+    $hostname = $extract('DB_HOSTNAME');
+    $username = $extract('DB_USERNAME');
+    $password = $extract('DB_PASSWORD');
+    $database = $extract('DB_DATABASE');
+    $port = $extract('DB_PORT');
+
+    if (!$driver || !$hostname || !$username || !$database) {
+        return null;
+    }
+
+    try {
+        if (!class_exists('DB')) {
+            $db_library = $real_target_path . '/system/library/db.php';
+            if (file_exists($db_library)) {
+                require_once $db_library;
+            }
+        }
+
+        $adaptor_class = 'DB\\' . $driver;
+        if (!class_exists($adaptor_class)) {
+            $adaptor_file = $real_target_path . '/system/library/db/' . $driver . '.php';
+            if (file_exists($adaptor_file)) {
+                require_once $adaptor_file;
+            }
+        }
+
+        $db = new DB($driver, $hostname, $username, (string)$password, $database, $port ?: null);
+        $connections[$real_target_path] = $db;
+        return $db;
+    } catch (\Exception $e) {
+        echo "Ошибка подключения к БД ({$real_target_path}): " . $e->getMessage() . "\n";
+        return null;
+    }
 }
 
 /**
@@ -472,99 +533,348 @@ function match_wildcard_pattern($pattern, $string) {
     );
     return preg_match('#^' . $regex . '$#', $string) === 1;
 }
+function get_install_xml_path() {
+    return CURRENT_DIR . '/install.xml';
+}
+
+function parse_install_xml_metadata() {
+    $xml_file = get_install_xml_path();
+    if (!is_file($xml_file)) {
+        return null;
+    }
+
+    $xml_content = file_get_contents($xml_file);
+    if ($xml_content === false || $xml_content === '') {
+        return null;
+    }
+
+    $dom = new DOMDocument('1.0', 'UTF-8');
+    if (!@$dom->loadXML($xml_content)) {
+        return null;
+    }
+
+    $read = function($tag, $default = '') use ($dom) {
+        $node = $dom->getElementsByTagName($tag)->item(0);
+        return $node ? trim($node->nodeValue) : $default;
+    };
+
+    return [
+        'xml' => $xml_content,
+        'code' => $read('code', ''),
+        'name' => $read('name', ''),
+        'version' => $read('version', ''),
+        'author' => $read('author', ''),
+        'link' => $read('link', '')
+    ];
+}
+
+function validate_module_metadata_contract(&$metadata, &$errors) {
+    $errors = [];
+    if (!is_array($metadata)) {
+        $errors[] = 'opencart-module.json должен содержать объект JSON';
+        return false;
+    }
+
+    if (array_key_exists('files', $metadata)) {
+        $errors[] = "Поле 'files' запрещено в opencart-module.json (используйте .ocm_files.json)";
+    }
+
+    return empty($errors);
+}
+
+function infer_code_from_metadata($metadata) {
+    if (!is_array($metadata)) {
+        return basename(CURRENT_DIR);
+    }
+
+    if (!empty($metadata['controller'])) {
+        $controller = trim((string)$metadata['controller'], '/');
+        $parts = explode('/', $controller);
+        $type = count($parts) >= 3 ? $parts[count($parts) - 2] : 'module';
+        $name = count($parts) >= 1 ? $parts[count($parts) - 1] : basename(CURRENT_DIR);
+        return preg_replace('/[^a-z0-9_]+/i', '_', strtolower($type . '_' . $name));
+    }
+
+    if (!empty($metadata['type']) && !empty($metadata['name'])) {
+        return preg_replace('/[^a-z0-9_]+/i', '_', strtolower($metadata['type'] . '_' . $metadata['name']));
+    }
+
+    return basename(CURRENT_DIR);
+}
+
+function get_existing_modification_version($db, $code) {
+    $safe_code = $db->escape($code);
+    $query = $db->query("SELECT `version` FROM `" . DB_PREFIX . "modification` WHERE `code` = '" . $safe_code . "' LIMIT 1");
+    if ($query->num_rows > 0 && !empty($query->row['version'])) {
+        return $query->row['version'];
+    }
+    return '';
+}
+
+function resolve_module_identity($target_path) {
+    $metadata = load_module_metadata();
+    $errors = [];
+    validate_module_metadata_contract($metadata, $errors);
+
+    $install_xml = parse_install_xml_metadata();
+    $db = get_opencart_db_for_path($target_path);
+
+    $code = !empty($metadata['code']) ? $metadata['code'] : '';
+    if ($code === '' && $install_xml && !empty($install_xml['code'])) {
+        $code = $install_xml['code'];
+    }
+    if ($code === '') {
+        $code = infer_code_from_metadata($metadata);
+    }
+
+    $name = '';
+    if (!empty($metadata['module_name'])) {
+        $name = $metadata['module_name'];
+    } elseif (!empty($metadata['name'])) {
+        $name = $metadata['name'];
+    } elseif ($install_xml && !empty($install_xml['name'])) {
+        $name = $install_xml['name'];
+    } else {
+        $name = $code;
+    }
+
+    $version = '';
+    if (!empty($metadata['version'])) {
+        $version = $metadata['version'];
+    } elseif ($install_xml && !empty($install_xml['version'])) {
+        $version = $install_xml['version'];
+    } elseif ($db) {
+        $version = get_existing_modification_version($db, $code);
+    }
+    if ($version === '') {
+        $version = '0.0.0';
+    }
+
+    return [
+        'code' => $code,
+        'name' => $name,
+        'version' => $version,
+        'metadata' => is_array($metadata) ? $metadata : [],
+        'install_xml' => $install_xml,
+        'errors' => $errors
+    ];
+}
+
+function ensure_ocm_tables($db) {
+    $db->query("
+        CREATE TABLE IF NOT EXISTS `" . DB_PREFIX . "ocm_modules` (
+            `module_id` INT(11) NOT NULL AUTO_INCREMENT,
+            `code` VARCHAR(64) NOT NULL,
+            `name` VARCHAR(255) NOT NULL,
+            `type` VARCHAR(32) NOT NULL DEFAULT 'module',
+            `installed_version` VARCHAR(32) NOT NULL DEFAULT '0.0.0',
+            `source` VARCHAR(32) NOT NULL DEFAULT 'ocm_cli',
+            `metadata_json` MEDIUMTEXT NOT NULL,
+            `status` TINYINT(1) NOT NULL DEFAULT 1,
+            `installed_at` DATETIME NOT NULL,
+            `updated_at` DATETIME NOT NULL,
+            PRIMARY KEY (`module_id`),
+            UNIQUE KEY `code` (`code`)
+        ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+    ");
+
+    $db->query("
+        CREATE TABLE IF NOT EXISTS `" . DB_PREFIX . "ocm_module_files` (
+            `file_id` INT(11) NOT NULL AUTO_INCREMENT,
+            `module_code` VARCHAR(64) NOT NULL,
+            `file_path` VARCHAR(500) NOT NULL,
+            `file_hash` VARCHAR(64) NOT NULL DEFAULT '',
+            `installed_at` DATETIME NOT NULL,
+            `updated_at` DATETIME NOT NULL,
+            `removed_at` DATETIME NULL DEFAULT NULL,
+            PRIMARY KEY (`file_id`),
+            KEY `module_code` (`module_code`),
+            KEY `file_path` (`file_path`)
+        ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+    ");
+
+    $db->query("
+        CREATE TABLE IF NOT EXISTS `" . DB_PREFIX . "ocm_module_versions` (
+            `version_id` INT(11) NOT NULL AUTO_INCREMENT,
+            `module_code` VARCHAR(64) NOT NULL,
+            `version` VARCHAR(32) NOT NULL,
+            `package_hash` VARCHAR(64) NOT NULL DEFAULT '',
+            `index_hash` VARCHAR(64) NOT NULL DEFAULT '',
+            `changelog` TEXT NOT NULL,
+            `source` VARCHAR(32) NOT NULL DEFAULT 'ocm_cli',
+            `published_at` DATETIME NOT NULL,
+            `applied_at` DATETIME NOT NULL,
+            PRIMARY KEY (`version_id`),
+            KEY `module_code` (`module_code`)
+        ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+    ");
+
+    $db->query("
+        CREATE TABLE IF NOT EXISTS `" . DB_PREFIX . "ocm_update_packages` (
+            `package_id` INT(11) NOT NULL AUTO_INCREMENT,
+            `code` VARCHAR(64) NOT NULL,
+            `name` VARCHAR(255) NOT NULL,
+            `description` TEXT,
+            `version` VARCHAR(32) NOT NULL,
+            `author` VARCHAR(255) DEFAULT NULL,
+            `author_url` VARCHAR(255) DEFAULT NULL,
+            `category` VARCHAR(64) DEFAULT 'module',
+            `opencart_version` VARCHAR(32) DEFAULT NULL,
+            `dependencies` TEXT DEFAULT NULL,
+            `archive_structure` enum('opencart', 'direct') DEFAULT 'opencart',
+            `file_path` VARCHAR(500) NOT NULL,
+            `file_size` INT(11) DEFAULT 0,
+            `file_hash` VARCHAR(64) DEFAULT NULL,
+            `package_hash` VARCHAR(64) DEFAULT NULL,
+            `index_hash` VARCHAR(64) DEFAULT NULL,
+            `image` VARCHAR(255) DEFAULT NULL,
+            `demo_url` VARCHAR(255) DEFAULT NULL,
+            `documentation_url` VARCHAR(255) DEFAULT NULL,
+            `support_url` VARCHAR(255) DEFAULT NULL,
+            `price` DECIMAL(15,4) DEFAULT 0.0000,
+            `downloads` INT(11) DEFAULT 0,
+            `rating` DECIMAL(3,2) DEFAULT 0.00,
+            `reviews` INT(11) DEFAULT 0,
+            `status` TINYINT(1) DEFAULT 1,
+            `featured` TINYINT(1) DEFAULT 0,
+            `sort_order` INT(3) DEFAULT 0,
+            `date_added` DATETIME NOT NULL,
+            `date_modified` DATETIME NOT NULL,
+            PRIMARY KEY (`package_id`),
+            UNIQUE KEY `code` (`code`),
+            KEY `status` (`status`),
+            KEY `featured` (`featured`),
+            KEY `category` (`category`)
+        ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+    ");
+}
+
 /**
- * Обработка OCMOD файла (index.xml)
+ * Обработка OCMOD файла (install.xml)
  */
 function handle_ocmod($target_path) {
-    $ocmod_file = CURRENT_DIR . '/index.xml';
-    if (!file_exists($ocmod_file)) {
-        return;
+    $install_xml = parse_install_xml_metadata();
+    if (!$install_xml) {
+        echo "  Ошибка: install.xml обязателен и должен быть валидным XML.\n";
+        return false;
     }
-
-    echo "  Обнаружен index.xml, устанавливаю модификатор...\n";
-    
-    $xml_content = file_get_contents($ocmod_file);
-    $dom = new DOMDocument('1.0', 'UTF-8');
-    if (!$dom->loadXML($xml_content)) {
-        echo "  Ошибка: Не удалось прочитать index.xml\n";
-        return;
-    }
-
-    $code_node = $dom->getElementsByTagName('code')->item(0);
-    $name_node = $dom->getElementsByTagName('name')->item(0);
-    $version_node = $dom->getElementsByTagName('version')->item(0);
-    $author_node = $dom->getElementsByTagName('author')->item(0);
-    
-    $code = $code_node ? $code_node->nodeValue : basename(CURRENT_DIR);
-    $name = $name_node ? $name_node->nodeValue : $code;
-    $version = $version_node ? $version_node->nodeValue : '1.0.0';
-    $author = $author_node ? $author_node->nodeValue : 'Unknown';
-    $link = $dom->getElementsByTagName('link')->item(0) ? $dom->getElementsByTagName('link')->item(0)->nodeValue : '';
 
     $db = get_opencart_db_for_path($target_path);
     if (!$db) {
         echo "  Предупреждение: Не удалось подключиться к БД для установки модификатора.\n";
+        return false;
+    }
+
+    $code = $install_xml['code'] !== '' ? $install_xml['code'] : basename(CURRENT_DIR);
+    $name = $install_xml['name'] !== '' ? $install_xml['name'] : $code;
+    $version = $install_xml['version'] !== '' ? $install_xml['version'] : '0.0.0';
+    $author = $install_xml['author'] !== '' ? $install_xml['author'] : 'Unknown';
+    $link = $install_xml['link'];
+
+    $db->query("DELETE FROM `" . DB_PREFIX . "modification` WHERE `code` = '" . $db->escape($code) . "'");
+    $db->query("INSERT INTO `" . DB_PREFIX . "modification` SET 
+        `code` = '" . $db->escape($code) . "',
+        `name` = '" . $db->escape($name) . "',
+        `author` = '" . $db->escape($author) . "',
+        `version` = '" . $db->escape($version) . "',
+        `link` = '" . $db->escape($link) . "',
+        `xml` = '" . $db->escape($install_xml['xml']) . "',
+        `status` = 1,
+        `date_added` = NOW()");
+
+    echo "  Модификатор '{$code}' установлен из install.xml.\n";
+    refresh_modifications($target_path);
+    return true;
+}
+
+function remove_module_from_db($target_path, $module_code) {
+    $db = get_opencart_db_for_path($target_path);
+    if (!$db || !$module_code) {
         return;
     }
 
-    $db->query("DELETE FROM " . DB_PREFIX . "modification WHERE code = '" . $db->escape($code) . "'");
-    $db->query("INSERT INTO " . DB_PREFIX . "modification SET 
-        code = '" . $db->escape($code) . "',
-        name = '" . $db->escape($name) . "',
-        author = '" . $db->escape($author) . "',
-        version = '" . $db->escape($version) . "',
-        link = '" . $db->escape($link) . "',
-        xml = '" . $db->escape($xml_content) . "',
-        status = 1,
-        date_added = NOW()");
+    ensure_ocm_tables($db);
 
-    echo "  Модификатор '{$code}' установлен в базу данных.\n";
-    
-    // Очистка кеша модификаторов
-    refresh_modifications($target_path);
+    $safe_code = $db->escape($module_code);
+    $db->query("DELETE FROM `" . DB_PREFIX . "ocm_modules` WHERE `code` = '" . $safe_code . "'");
+    $db->query("UPDATE `" . DB_PREFIX . "ocm_module_files` SET `removed_at` = NOW() WHERE `module_code` = '" . $safe_code . "' AND `removed_at` IS NULL");
 }
 
 /**
  * Синхронизация данных о модуле с базой OpenCart
  */
 function sync_with_db($target_path, $files) {
-    if (!function_exists('load_module_metadata')) return;
-
-    $metadata = load_module_metadata();
-    $code = isset($metadata['code']) ? $metadata['code'] : basename(CURRENT_DIR);
-    $name = isset($metadata['module_name']) ? $metadata['module_name'] : $code;
-    $version = isset($metadata['version']) ? $metadata['version'] : '1.0.0';
-
     $db = get_opencart_db_for_path($target_path);
-    if (!$db) return;
+    if (!$db) {
+        return;
+    }
 
-    // Создаем таблицу если нет
-    $db->query("
-        CREATE TABLE IF NOT EXISTS `" . DB_PREFIX . "gdt_modules` (
-            `module_id` INT(11) NOT NULL AUTO_INCREMENT,
-            `code` VARCHAR(64) NOT NULL,
-            `name` VARCHAR(255) NOT NULL,
-            `version` VARCHAR(32) NOT NULL,
-            `data` TEXT NOT NULL,
-            `paths` TEXT NOT NULL,
-            `date_added` DATETIME NOT NULL,
-            PRIMARY KEY (`module_id`),
-            UNIQUE KEY `code` (`code`)
-        ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
-    ");
+    ensure_ocm_tables($db);
 
-    $db->query("INSERT INTO `" . DB_PREFIX . "gdt_modules` SET 
+    $identity = resolve_module_identity($target_path);
+    $metadata = $identity['metadata'];
+
+    if (!empty($identity['errors'])) {
+        foreach ($identity['errors'] as $error) {
+            echo "  Ошибка контракта: {$error}\n";
+        }
+        return;
+    }
+
+    $code = $identity['code'];
+    $name = $identity['name'];
+    $version = $identity['version'];
+    $module_type = !empty($metadata['type']) ? $metadata['type'] : 'module';
+    $install_xml_hash = $identity['install_xml'] ? sha1($identity['install_xml']['xml']) : '';
+
+    $metadata['code'] = $code;
+    $metadata['version'] = $version;
+    $metadata['name'] = $name;
+
+    $db->query("INSERT INTO `" . DB_PREFIX . "ocm_modules` SET
         `code` = '" . $db->escape($code) . "',
         `name` = '" . $db->escape($name) . "',
-        `version` = '" . $db->escape($version) . "',
-        `data` = '" . $db->escape(json_encode($metadata, JSON_UNESCAPED_UNICODE)) . "',
-        `paths` = '" . $db->escape(json_encode($files, JSON_UNESCAPED_UNICODE)) . "',
-        `date_added` = NOW()
-        ON DUPLICATE KEY UPDATE 
-        `name` = '" . $db->escape($name) . "',
-        `version` = '" . $db->escape($version) . "',
-        `data` = '" . $db->escape(json_encode($metadata, JSON_UNESCAPED_UNICODE)) . "',
-        `paths` = '" . $db->escape(json_encode($files, JSON_UNESCAPED_UNICODE)) . "'");
+        `type` = '" . $db->escape($module_type) . "',
+        `installed_version` = '" . $db->escape($version) . "',
+        `source` = 'ocm_cli',
+        `metadata_json` = '" . $db->escape(json_encode($metadata, JSON_UNESCAPED_UNICODE)) . "',
+        `status` = 1,
+        `installed_at` = NOW(),
+        `updated_at` = NOW()
+        ON DUPLICATE KEY UPDATE
+        `name` = VALUES(`name`),
+        `type` = VALUES(`type`),
+        `installed_version` = VALUES(`installed_version`),
+        `source` = 'ocm_cli',
+        `metadata_json` = VALUES(`metadata_json`),
+        `status` = 1,
+        `updated_at` = NOW()");
 
-    echo "  Данные модуля синхронизированы в таблицу gdt_modules.\n";
+    $safe_code = $db->escape($code);
+    $db->query("DELETE FROM `" . DB_PREFIX . "ocm_module_files` WHERE `module_code` = '" . $safe_code . "'");
+
+    foreach ($files as $relative_path) {
+        $target_file = rtrim($target_path, '/') . '/' . ltrim($relative_path, '/');
+        $file_hash = is_file($target_file) ? sha1_file($target_file) : '';
+
+        $db->query("INSERT INTO `" . DB_PREFIX . "ocm_module_files` SET
+            `module_code` = '" . $safe_code . "',
+            `file_path` = '" . $db->escape($relative_path) . "',
+            `file_hash` = '" . $db->escape($file_hash ?: '') . "',
+            `installed_at` = NOW(),
+            `updated_at` = NOW(),
+            `removed_at` = NULL");
+    }
+
+    $db->query("INSERT INTO `" . DB_PREFIX . "ocm_module_versions` SET
+        `module_code` = '" . $safe_code . "',
+        `version` = '" . $db->escape($version) . "',
+        `package_hash` = '',
+        `index_hash` = '" . $db->escape($install_xml_hash) . "',
+        `changelog` = '',
+        `source` = 'ocm_cli',
+        `published_at` = NOW(),
+        `applied_at` = NOW()");
+
+    echo "  Данные модуля синхронизированы в таблицы ocm_*.\n";
 }

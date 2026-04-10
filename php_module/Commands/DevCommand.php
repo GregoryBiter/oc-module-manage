@@ -31,21 +31,22 @@ class DevCommand extends Command {
             $files_map[$file] = filemtime(MODULE_DIR . '/' . $file);
         }
         
-        // Начальное состояние index.xml
-        $ocmod_file = CURRENT_DIR . '/index.xml';
+        // Начальное состояние install.xml
+        $ocmod_file = CURRENT_DIR . '/install.xml';
         $ocmod_mtime = file_exists($ocmod_file) ? filemtime($ocmod_file) : 0;
         
         // Основной цикл наблюдения
         while (true) {
             clearstatcache();
             
-            // 1. Проверка index.xml
+            // 1. Проверка install.xml
             if (file_exists($ocmod_file)) {
                 $current_ocmod_mtime = filemtime($ocmod_file);
                 if ($current_ocmod_mtime != $ocmod_mtime) {
-                    $output->info("\n[CHANGE] Обнаружены изменения в index.xml. Обновление модификаторов...");
+                    $output->info("\n[CHANGE] Обнаружены изменения в install.xml. Обновление модификаторов...");
                     foreach ($opencart_paths as $target_path) {
                         handle_ocmod($target_path);
+                        sync_with_db($target_path, array_keys($files_map));
                     }
                     $ocmod_mtime = $current_ocmod_mtime;
                 }

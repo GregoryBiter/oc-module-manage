@@ -29,6 +29,9 @@ class RemoveCommand extends Command {
     }
     
     private function removeFromPath($target_path, Output $output) {
+        $identity = resolve_module_identity($target_path);
+        $module_code = $identity['code'] ?: basename(CURRENT_DIR);
+
         $files = load_files_list();
         if (empty($files)) {
             $output->comment("Нет записей о скопированных файлах в .ocm_files.json");
@@ -45,7 +48,7 @@ class RemoveCommand extends Command {
         // Удаляем сам модуль из БД
         $db = get_opencart_db_for_path($target_path);
         if ($db) {
-            $code = basename(CURRENT_DIR);
+            $code = $module_code;
             
             // Удаляем OCMOD
             $query = $db->query("SELECT * FROM `" . DB_PREFIX . "modification` WHERE `code` = '" . $db->escape($code) . "'");
@@ -54,12 +57,8 @@ class RemoveCommand extends Command {
                 $output->info("  Удален OCMOD-модификатор из БД.");
             }
     
-            // Удаляем запись из gdt_modules
-            $query2 = $db->query("SHOW TABLES LIKE '" . DB_PREFIX . "gdt_modules'");
-            if ($query2->num_rows > 0) {
-                $db->query("DELETE FROM `" . DB_PREFIX . "gdt_modules` WHERE `code` = '" . $db->escape($code) . "'");
-                $output->info("  Удалена запись модуля из таблицы gdt_modules.");
-            }
+            remove_module_from_db($target_path, $code);
+            $output->info("  Удалены записи модуля из таблиц ocm_*.");
         }
     
         refresh_modifications($target_path);

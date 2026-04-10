@@ -13,6 +13,21 @@ class InstallCommand extends Command {
     protected $description = 'Копирование файлов модуля в папку OpenCart';
 
     public function handle(Input $input, Output $output) {
+        $install_xml = get_install_xml_path();
+        if (!is_file($install_xml)) {
+            $output->error("install.xml обязателен. Файл не найден: {$install_xml}");
+            return;
+        }
+
+        $metadata = load_module_metadata();
+        $errors = [];
+        if (!validate_module_metadata_contract($metadata, $errors)) {
+            foreach ($errors as $error) {
+                $output->error($error);
+            }
+            return;
+        }
+
         $opencart_paths = defined('OPENCART_PATHS') ? OPENCART_PATHS : [OPENCART_DIR];
         
         foreach ($opencart_paths as $target_path) {
@@ -57,10 +72,13 @@ class InstallCommand extends Command {
             save_files_list($updated_files);
         }
 
-        // Вызов OpenCart Integration (OCMOD) - функции из functions.php
-        handle_ocmod($target_path);
+        // Вызов OpenCart Integration (OCMOD) - install.xml
+        if (!handle_ocmod($target_path)) {
+            $output->error("  Не удалось применить install.xml в {$target_path}");
+            return;
+        }
 
-        // Запись в базу (gdt_modules) - функции из functions.php
+        // Запись в базу (ocm_*) - функции из functions.php
         sync_with_db($target_path, $all_current_files);
     }
 }

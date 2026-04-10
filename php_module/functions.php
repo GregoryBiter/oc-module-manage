@@ -40,10 +40,13 @@ function save_files_list($files) {
  */
 function load_module_metadata() {
     if (file_exists(JSON_FILE)) {
-        $data = json_decode(file_get_contents(JSON_FILE), true);
-        // Исключаем поле files, если оно есть
-        unset($data['files']);
-        return $data;
+        $json = file_get_contents(JSON_FILE);
+        $data = json_decode($json, true);
+        if ($data) {
+            // Исключаем поле files, если оно есть
+            unset($data['files']);
+            return $data;
+        }
     }
     return [];
 }
@@ -54,7 +57,116 @@ function load_module_metadata() {
 function save_module_metadata($metadata) {
     // Убеждаемся, что поле files не попадет в метаданные
     unset($metadata['files']);
+    
+    // Если файл уже существует, пробуем сохранить форматирование или просто перезаписать
     file_put_contents(JSON_FILE, json_encode($metadata, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
+/**
+ * Инициализация OpenCart окружения
+ */
+function bootstrap_opencart() {
+    if (!defined('OPENCART_DIR') || !is_dir(OPENCART_DIR)) {
+        return null;
+    }
+
+    $config_file = OPENCART_DIR . '/config.php';
+    if (!file_exists($config_file)) {
+        return null;
+    }
+
+    // Попытка загрузить переменные окружения (.env)
+    load_env_file(OPENCART_DIR . '/.env');
+    load_env_file(CURRENT_DIR . '/.env');
+
+    // Если OC_PATH не задан в окружении, устанавливаем его в OPENCART_DIR
+    if (!isset($_ENV['OC_PATH']) || empty($_ENV['OC_PATH'])) {
+        $_ENV['OC_PATH'] = OPENCART_DIR;
+    }
+
+    // Загружаем конфиг
+    require_once $config_file;
+
+    // Проверка необходимых констант
+    if (!defined('DIR_SYSTEM')) {
+        return null;
+    }
+
+    // Загрузка OpenCart
+    require_once DIR_SYSTEM . 'startup.php';
+
+    // Registry
+    $registry = new Registry();
+
+    // Loader
+    $loader = new Loader($registry);
+    $registry->set('load', $loader);
+
+    // Database
+    if (defined('DB_DRIVER') && defined('DB_HOSTNAME') && defined('DB_USERNAME') && defined('DB_DATABASE')) {
+        try {
+            $db = new DB(DB_DRIVER, DB_HOSTNAME, DB_USERNAME, DB_PASSWORD, DB_DATABASE, defined('DB_PORT') ? DB_PORT : NULL);
+            $registry->set('db', $db);
+            return $registry;
+        } catch (\Exception $e) {
+            echo "Ошибка подключения к БД: " . $e->getMessage() . "\n";
+            return null;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Загрузка переменных из .env файла
+ */
+function load_env_file($path) {
+    if (!file_exists($path)) return;
+    
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (strpos(trim($line), '#') === 0) continue;
+        
+        list($name, $value) = explode('=', $line, 2);
+        $name = trim($name);
+        if (!isset($_ENV[$name])) {
+            $_ENV[$name] = trim($value);
+            putenv("{$name}=" . trim($value));
+        }
+    }
+}
+
+/**
+ * Получить объект базы данных OpenCart
+ */
+function get_opencart_db() {
+    static $db = null;
+    if ($db === null) {
+        $registry = bootstrap_opencart();
+        if ($registry && $registry->has('db')) {
+            $db = $registry->get('db');
+        }
+    }
+    return $db;
+}
+
+/**
+ * Вспомогательная функция для получения БД по пути
+ */
+function get_opencart_db_for_path($target_path) {
+    // Временно используем глобальный bootstrap
+    return get_opencart_db();
+}
+
+/**
+ * Очистка кеша модификаций
+ */
+function refresh_modifications($target_path) {
+    $mod_dir = $target_path . '/system/storage/modification/';
+    if (is_dir($mod_dir)) {
+        echo "  Очистка кеша модификаций...\n";
+        clean_directory($mod_dir);
+    }
 }
 
 /**
@@ -359,4 +471,100 @@ function match_wildcard_pattern($pattern, $string) {
         $pattern
     );
     return preg_match('#^' . $regex . '$#', $string) === 1;
+}
+/**
+ * Обработка OCMOD файла (index.xml)
+ */
+function handle_ocmod($target_path) {
+    $ocmod_file = CURRENT_DIR . '/index.xml';
+    if (!file_exists($ocmod_file)) {
+        return;
+    }
+
+    echo "  Обнаружен index.xml, устанавливаю модификатор...\n";
+    
+    $xml_content = file_get_contents($ocmod_file);
+    $dom = new DOMDocument('1.0', 'UTF-8');
+    if (!$dom->loadXML($xml_content)) {
+        echo "  Ошибка: Не удалось прочитать index.xml\n";
+        return;
+    }
+
+    $code_node = $dom->getElementsByTagName('code')->item(0);
+    $name_node = $dom->getElementsByTagName('name')->item(0);
+    $version_node = $dom->getElementsByTagName('version')->item(0);
+    $author_node = $dom->getElementsByTagName('author')->item(0);
+    
+    $code = $code_node ? $code_node->nodeValue : basename(CURRENT_DIR);
+    $name = $name_node ? $name_node->nodeValue : $code;
+    $version = $version_node ? $version_node->nodeValue : '1.0.0';
+    $author = $author_node ? $author_node->nodeValue : 'Unknown';
+    $link = $dom->getElementsByTagName('link')->item(0) ? $dom->getElementsByTagName('link')->item(0)->nodeValue : '';
+
+    $db = get_opencart_db_for_path($target_path);
+    if (!$db) {
+        echo "  Предупреждение: Не удалось подключиться к БД для установки модификатора.\n";
+        return;
+    }
+
+    $db->query("DELETE FROM " . DB_PREFIX . "modification WHERE code = '" . $db->escape($code) . "'");
+    $db->query("INSERT INTO " . DB_PREFIX . "modification SET 
+        code = '" . $db->escape($code) . "',
+        name = '" . $db->escape($name) . "',
+        author = '" . $db->escape($author) . "',
+        version = '" . $db->escape($version) . "',
+        link = '" . $db->escape($link) . "',
+        xml = '" . $db->escape($xml_content) . "',
+        status = 1,
+        date_added = NOW()");
+
+    echo "  Модификатор '{$code}' установлен в базу данных.\n";
+    
+    // Очистка кеша модификаторов
+    refresh_modifications($target_path);
+}
+
+/**
+ * Синхронизация данных о модуле с базой OpenCart
+ */
+function sync_with_db($target_path, $files) {
+    if (!function_exists('load_module_metadata')) return;
+
+    $metadata = load_module_metadata();
+    $code = isset($metadata['code']) ? $metadata['code'] : basename(CURRENT_DIR);
+    $name = isset($metadata['module_name']) ? $metadata['module_name'] : $code;
+    $version = isset($metadata['version']) ? $metadata['version'] : '1.0.0';
+
+    $db = get_opencart_db_for_path($target_path);
+    if (!$db) return;
+
+    // Создаем таблицу если нет
+    $db->query("
+        CREATE TABLE IF NOT EXISTS `" . DB_PREFIX . "gdt_modules` (
+            `module_id` INT(11) NOT NULL AUTO_INCREMENT,
+            `code` VARCHAR(64) NOT NULL,
+            `name` VARCHAR(255) NOT NULL,
+            `version` VARCHAR(32) NOT NULL,
+            `data` TEXT NOT NULL,
+            `paths` TEXT NOT NULL,
+            `date_added` DATETIME NOT NULL,
+            PRIMARY KEY (`module_id`),
+            UNIQUE KEY `code` (`code`)
+        ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+    ");
+
+    $db->query("INSERT INTO `" . DB_PREFIX . "gdt_modules` SET 
+        `code` = '" . $db->escape($code) . "',
+        `name` = '" . $db->escape($name) . "',
+        `version` = '" . $db->escape($version) . "',
+        `data` = '" . $db->escape(json_encode($metadata, JSON_UNESCAPED_UNICODE)) . "',
+        `paths` = '" . $db->escape(json_encode($files, JSON_UNESCAPED_UNICODE)) . "',
+        `date_added` = NOW()
+        ON DUPLICATE KEY UPDATE 
+        `name` = '" . $db->escape($name) . "',
+        `version` = '" . $db->escape($version) . "',
+        `data` = '" . $db->escape(json_encode($metadata, JSON_UNESCAPED_UNICODE)) . "',
+        `paths` = '" . $db->escape(json_encode($files, JSON_UNESCAPED_UNICODE)) . "'");
+
+    echo "  Данные модуля синхронизированы в таблицу gdt_modules.\n";
 }

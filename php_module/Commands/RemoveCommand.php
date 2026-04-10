@@ -13,7 +13,55 @@ class RemoveCommand extends Command {
     protected $description = 'Удаление файлов модуля из OpenCart';
 
     public function handle(Input $input, Output $output) {
-        $args = $input->getArguments();
-        remove($args);
+        $opencart_paths = defined('OPENCART_PATHS') ? OPENCART_PATHS : [OPENCART_DIR];
+    
+        foreach ($opencart_paths as $target_path) {
+            if (!is_dir($target_path)) {
+                $output->error("Директория OpenCart не существует: {$target_path}");
+                continue;
+            }
+            
+            $output->info(">>> Удаление из: {$target_path}");
+            $this->removeFromPath($target_path, $output);
+        }
+        
+        $output->info("\nУдаление завершено.");
+    }
+    
+    private function removeFromPath($target_path, Output $output) {
+        $files = load_files_list();
+        if (empty($files)) {
+            $output->comment("Нет записей о скопированных файлах в .ocm_files.json");
+        } else {
+            foreach ($files as $relative_path) {
+                $dest_path = $target_path . '/' . $relative_path;
+                if (file_exists($dest_path) && !is_dir($dest_path)) {
+                    unlink($dest_path);
+                    $output->writeln("  Удалено: {$relative_path}");
+                }
+            }
+        }
+    
+        // Удаляем сам модуль из БД
+        $db = get_opencart_db_for_path($target_path);
+        if ($db) {
+            $code = basename(CURRENT_DIR);
+            
+            // Удаляем OCMOD
+            $query = $db->query("SELECT * FROM `" . DB_PREFIX . "modification` WHERE `code` = '" . $db->escape($code) . "'");
+            if ($query->num_rows) {
+                $db->query("DELETE FROM `" . DB_PREFIX . "modification` WHERE `code` = '" . $db->escape($code) . "'");
+                $output->info("  Удален OCMOD-модификатор из БД.");
+            }
+    
+            // Удаляем запись из gdt_modules
+            $query2 = $db->query("SHOW TABLES LIKE '" . DB_PREFIX . "gdt_modules'");
+            if ($query2->num_rows > 0) {
+                $db->query("DELETE FROM `" . DB_PREFIX . "gdt_modules` WHERE `code` = '" . $db->escape($code) . "'");
+                $output->info("  Удалена запись модуля из таблицы gdt_modules.");
+            }
+        }
+    
+        refresh_modifications($target_path);
     }
 }

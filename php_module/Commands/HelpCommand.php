@@ -13,6 +13,7 @@ class HelpCommand extends Command {
     protected $description = 'Вывод справки по доступным командам';
 
     public function handle(Input $input, Output $output) {
-        $this->application->showHelp($output);
+        $this->app->showHelp($output);
     }
+
 }

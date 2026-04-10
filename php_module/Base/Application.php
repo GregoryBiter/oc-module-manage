@@ -7,8 +7,35 @@ namespace Ocm\Base;
  */
 class Application {
     protected $commands = [];
+    protected $services = [];
     protected $name = 'OCM Manager';
-    protected $version = '1.1.0';
+    protected $version = '1.2.0';
+
+    public function __construct() {
+        $this->bootstrapServices();
+    }
+
+    /**
+     * Инициализация базовых сервисов.
+     */
+    protected function bootstrapServices() {
+        $fileSystem = new \Ocm\Services\FileSystemService();
+        $config = new \Ocm\Services\ConfigService();
+        $openCart = new \Ocm\Services\OpenCartService();
+        $module = new \Ocm\Services\ModuleService($fileSystem, $config, $openCart);
+
+        $this->services['filesystem'] = $fileSystem;
+        $this->services['config'] = $config;
+        $this->services['opencart'] = $openCart;
+        $this->services['module'] = $module;
+    }
+
+    /**
+     * Получить сервис по ключу.
+     */
+    public function getService($key) {
+        return isset($this->services[$key]) ? $this->services[$key] : null;
+    }
 
     /**
      * Зарегистрировать команду.

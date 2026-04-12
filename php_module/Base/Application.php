@@ -75,15 +75,64 @@ class Application {
      * Запуск внешнего скрипта.
      */
     protected function runExternalScript($script_name, $output) {
-        if (function_exists('run_script')) {
-            if (!run_script($script_name)) {
-                $output->error("Команда или скрипт '{$script_name}' не найдены.");
-                $this->showHelp($output);
-            }
-        } else {
-            $output->error("Команда '{$script_name}' не найдена.");
+        $script_path = $this->resolveExternalScriptPath($script_name);
+
+        if ($script_path === null) {
+            $output->error("Команда или скрипт '{$script_name}' не найдены.");
             $this->showHelp($output);
+            return;
         }
+
+        $exit_code = $this->executeExternalScript($script_path);
+
+        if ($exit_code !== 0) {
+            $output->error("Скрипт '{$script_name}' завершился с кодом {$exit_code}.");
+        }
+    }
+
+    /**
+     * Найти файл внешнего скрипта по имени команды.
+     */
+    protected function resolveExternalScriptPath($script_name) {
+        if (!defined('SCRIPT_DIR')) {
+            return null;
+        }
+
+        $scripts_dir = SCRIPT_DIR . '/scripts/';
+        $candidates = [$scripts_dir . $script_name];
+
+        if (pathinfo($script_name, PATHINFO_EXTENSION) === '') {
+            $candidates[] = $scripts_dir . $script_name . '.php';
+            $candidates[] = $scripts_dir . $script_name . '.sh';
+        }
+
+        foreach ($candidates as $candidate) {
+            if (is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Запустить найденный внешний скрипт.
+     */
+    protected function executeExternalScript($script_path) {
+        $extension = strtolower(pathinfo($script_path, PATHINFO_EXTENSION));
+
+        if ($extension === 'php') {
+            passthru('php ' . escapeshellarg($script_path), $exit_code);
+            return $exit_code;
+        }
+
+        if ($extension === 'sh') {
+            passthru('bash ' . escapeshellarg($script_path), $exit_code);
+            return $exit_code;
+        }
+
+        passthru(escapeshellarg($script_path), $exit_code);
+        return $exit_code;
     }
 
     /**

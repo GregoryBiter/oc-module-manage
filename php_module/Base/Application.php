@@ -35,6 +35,7 @@ class Application extends SymfonyApplication {
         $template = new \Ocm\Services\TemplateService($fileSystem);
 
         $database = new \Ocm\Services\DatabaseService();
+        $agent = new \Ocm\Services\AgentSkillService($fileSystem, $openCart);
 
         $this->services['filesystem'] = $fileSystem;
         $this->services['config'] = $config;
@@ -42,6 +43,7 @@ class Application extends SymfonyApplication {
         $this->services['module'] = $module;
         $this->services['template'] = $template;
         $this->services['database'] = $database;
+        $this->services['agent'] = $agent;
     }
 
     /**
@@ -68,6 +70,10 @@ class Application extends SymfonyApplication {
         $this->add(new \Ocm\Commands\DbCliCommand());
         $this->add(new \Ocm\Commands\DbDumpCommand());
         $this->add(new \Ocm\Commands\DbImportCommand());
+
+        // AI агенты и скилы
+        $this->add(new \Ocm\Commands\AgentInstallCommand());
+        $this->add(new \Ocm\Commands\AgentListCommand());
     }
 
     /**

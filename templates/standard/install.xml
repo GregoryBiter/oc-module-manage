@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<modification>
+    <name>{{#module_title}}</name>
+    <code>{{#module_name}}</code>
+    <version>{{#version}}</version>
+    <author>{{#author}}</author>
+    <link></link>
+    <!--
+    Пример OCMOD модификации (раскомментируйте при необходимости):
+    <file path="catalog/controller/common/header.php">
+        <operation>
+            <search><![CDATA[$data['title'] = $this->document->getTitle();]]></search>
+            <add position="after"><![CDATA[
+            // Injected by {{#module_name}}
+            ]]></add>
+        </operation>
+    </file>
+    -->
+</modification>

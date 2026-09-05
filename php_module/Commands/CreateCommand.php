@@ -53,6 +53,7 @@ class CreateCommand extends Command {
 
         $camelCaseName = $config->toCamelCase($moduleName);
         $camelCaseLowerName = $config->toCamelCaseLower($moduleName);
+        $moduleTitle = ucwords(str_replace('_', ' ', $moduleName));
 
         $newModuleDir = getcwd() . '/' . $moduleName;
 
@@ -65,7 +66,13 @@ class CreateCommand extends Command {
         $placeholders = [
             '{{#ModuleName}}' => $camelCaseName,
             '{{#moduleName}}' => $camelCaseLowerName,
-            '{{#module_name}}' => $moduleName
+            '{{#module_name}}' => $moduleName,
+            '{{#NameModule}}' => $camelCaseName,
+            '{{#module_title}}' => $moduleTitle,
+            '{{#author}}' => 'Developer',
+            '{{#version}}' => '1.0.0',
+            '{{#year}}' => date('Y'),
+            '{{#date}}' => date('Y-m-d')
         ];
 
         $fileSystem->copyDirRecursively($templateDir, $newModuleDir, $placeholders);

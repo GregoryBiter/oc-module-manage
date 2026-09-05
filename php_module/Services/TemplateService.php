@@ -44,9 +44,18 @@ class TemplateService {
         return $dirs;
     }
 
+    protected $aliases = [
+        'my_module' => 'crud',
+        'ocm_gbt_extension_module' => 'standard',
+        'basic' => 'standard',
+        'default' => 'standard',
+        'advanced' => 'crud',
+        'modifier' => 'ocmod'
+    ];
+
     /**
      * Возвращает список всех доступных шаблонов:
-     * [ 'name' => 'my_module', 'type' => 'builtin|user|local', 'path' => '/path/to/template' ]
+     * [ 'name' => 'standard', 'type' => 'builtin|user|local', 'path' => '/path/to/template' ]
      */
     public function getAvailableTemplates($currentDir = null) {
         $dirs = $this->getTemplateDirectories($currentDir);
@@ -70,15 +79,37 @@ class TemplateService {
             }
         }
 
-        return $templates;
+        // Приоритетный порядок для стандартных шаблонов (standard первый)
+        $preferredOrder = ['standard', 'crud', 'ocmod'];
+        $sortedTemplates = [];
+        foreach ($preferredOrder as $pref) {
+            if (isset($templates[$pref])) {
+                $sortedTemplates[$pref] = $templates[$pref];
+                unset($templates[$pref]);
+            }
+        }
+        foreach ($templates as $key => $val) {
+            $sortedTemplates[$key] = $val;
+        }
+
+        return $sortedTemplates;
     }
 
     /**
-     * Получить путь к шаблону по имени.
+     * Получить путь к шаблону по имени (с поддержкой алиасов).
      */
     public function getTemplatePath($name, $currentDir = null) {
         $templates = $this->getAvailableTemplates($currentDir);
-        return isset($templates[$name]) ? $templates[$name]['path'] : null;
+        if (isset($templates[$name])) {
+            return $templates[$name]['path'];
+        }
+
+        // Проверка алиасов
+        if (isset($this->aliases[$name]) && isset($templates[$this->aliases[$name]])) {
+            return $templates[$this->aliases[$name]]['path'];
+        }
+
+        return null;
     }
 
     /**

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<modification>
+    <name>{{#module_title}}</name>
+    <code>{{#module_name}}</code>
+    <version>{{#version}}</version>
+    <author>{{#author}}</author>
+    <link></link>
+    <!-- Добавление пункта в главное меню админ-панели -->
+    <file path="admin/controller/common/column_left.php">
+        <operation>
+            <search><![CDATA[// Extension]]></search>
+            <add position="before"><![CDATA[
+            if ($this->user->hasPermission('access', 'extension/module/{{#module_name}}')) {
+                $data['menus'][] = array(
+                    'id'       => 'menu-{{#module_name}}',
+                    'icon'     => 'fa-list-alt',
+                    'name'     => '{{#module_title}}',
+                    'href'     => $this->url->link('extension/module/{{#module_name}}', 'user_token=' . $this->session->data['user_token'], true),
+                    'children' => array()
+                );
+            }
+            ]]></add>
+        </operation>
+    </file>
+</modification>

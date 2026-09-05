@@ -56,7 +56,8 @@ class MakeModuleCommand extends Command {
             $templateName = explode(' [', $selectedLabel)[0];
         }
 
-        if (!isset($availableTemplates[$templateName])) {
+        $templatePath = $templateService->getTemplatePath($templateName);
+        if (!$templatePath) {
             $io->error("Шаблон '{$templateName}' не существует.");
             return self::FAILURE;
         }
@@ -80,11 +81,20 @@ class MakeModuleCommand extends Command {
 
         $camelCaseName = $configService->toCamelCase($moduleName);
         $camelCaseLowerName = $configService->toCamelCaseLower($moduleName);
+        $moduleTitle = $input->getOption('title') ?: ucwords(str_replace('_', ' ', $moduleName));
+        $author = $input->getOption('author') ?: 'Developer';
+        $version = $input->getOption('ver') ?: '1.0.0';
 
         $placeholders = [
             '{{#ModuleName}}' => $camelCaseName,
             '{{#moduleName}}' => $camelCaseLowerName,
-            '{{#module_name}}' => $moduleName
+            '{{#module_name}}' => $moduleName,
+            '{{#NameModule}}' => $camelCaseName,
+            '{{#module_title}}' => $moduleTitle,
+            '{{#author}}' => $author,
+            '{{#version}}' => $version,
+            '{{#year}}' => date('Y'),
+            '{{#date}}' => date('Y-m-d')
         ];
 
         // Копирование шаблона
@@ -99,11 +109,11 @@ class MakeModuleCommand extends Command {
         // Создаем или обновляем opencart-module.json внутри нового модуля
         $jsonFile = $targetDir . '/opencart-module.json';
         $metadata = [
-            'module_name' => $input->getOption('title') ?: $camelCaseName,
+            'name' => $moduleTitle,
             'code' => $moduleName,
-            'version' => $input->getOption('ver') ?: '1.0.0',
-            'author' => $input->getOption('author') ?: 'Developer',
-            'description' => 'OpenCart module ' . $camelCaseName
+            'version' => $version,
+            'author' => $author,
+            'description' => 'OpenCart module ' . $moduleTitle
         ];
         file_put_contents($jsonFile, json_encode($metadata, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 

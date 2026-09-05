@@ -1,0 +1,7 @@
+{
+  "name": "{{#module_title}}",
+  "code": "{{#module_name}}",
+  "version": "{{#version}}",
+  "author": "{{#author}}",
+  "description": "{{#module_title}} CRUD & Database Module for OpenCart 3"
+}

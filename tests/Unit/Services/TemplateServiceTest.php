@@ -61,4 +61,64 @@ class TemplateServiceTest extends TestCase {
         $this->assertFileExists($targetDir . '/hello_world.txt');
         $this->assertSame('Name: HelloWorld', file_get_contents($targetDir . '/hello_world.txt'));
     }
+
+    public function testDefaultBuiltinTemplatesExist(): void {
+        $defaultService = new TemplateService(new FileSystemService());
+        $templates = $defaultService->getAvailableTemplates();
+
+        $this->assertArrayHasKey('standard', $templates);
+        $this->assertArrayHasKey('crud', $templates);
+        $this->assertArrayHasKey('ocmod', $templates);
+
+        // standard should be first in preferred order
+        $keys = array_keys($templates);
+        $this->assertSame('standard', $keys[0]);
+    }
+
+    public function testTemplateAliasResolution(): void {
+        $defaultService = new TemplateService(new FileSystemService());
+
+        $standardPath = $defaultService->getTemplatePath('standard');
+        $this->assertNotNull($standardPath);
+        $this->assertSame($standardPath, $defaultService->getTemplatePath('ocm_gbt_extension_module'));
+        $this->assertSame($standardPath, $defaultService->getTemplatePath('basic'));
+
+        $crudPath = $defaultService->getTemplatePath('crud');
+        $this->assertNotNull($crudPath);
+        $this->assertSame($crudPath, $defaultService->getTemplatePath('my_module'));
+        $this->assertSame($crudPath, $defaultService->getTemplatePath('advanced'));
+
+        $ocmodPath = $defaultService->getTemplatePath('ocmod');
+        $this->assertNotNull($ocmodPath);
+        $this->assertSame($ocmodPath, $defaultService->getTemplatePath('modifier'));
+    }
+
+    public function testCreateModuleFromStandardTemplate(): void {
+        $defaultService = new TemplateService(new FileSystemService());
+        $targetDir = $this->testDir . '/new_standard_module';
+        $placeholders = [
+            '{{#module_name}}' => 'banner_slider',
+            '{{#ModuleName}}' => 'BannerSlider',
+            '{{#moduleName}}' => 'bannerSlider',
+            '{{#NameModule}}' => 'BannerSlider',
+            '{{#module_title}}' => 'Banner Slider',
+            '{{#author}}' => 'Developer',
+            '{{#version}}' => '1.0.0',
+            '{{#year}}' => '2026',
+            '{{#date}}' => '2026-09-05'
+        ];
+
+        $result = $defaultService->createFromTemplate('standard', $targetDir, $placeholders);
+        $this->assertTrue($result);
+        $this->assertFileExists($targetDir . '/opencart-module.json');
+        $this->assertFileExists($targetDir . '/install.xml');
+        $this->assertFileExists($targetDir . '/upload/admin/controller/extension/module/banner_slider.php');
+        $this->assertFileExists($targetDir . '/upload/admin/view/template/extension/module/banner_slider.twig');
+        $this->assertFileExists($targetDir . '/upload/admin/language/en-gb/extension/module/banner_slider.php');
+        $this->assertFileExists($targetDir . '/upload/catalog/controller/extension/module/banner_slider.php');
+
+        $adminCtrl = file_get_contents($targetDir . '/upload/admin/controller/extension/module/banner_slider.php');
+        $this->assertStringContainsString('class ControllerExtensionModuleBannerSlider extends Controller', $adminCtrl);
+        $this->assertStringContainsString('module_banner_slider', $adminCtrl);
+    }
 }

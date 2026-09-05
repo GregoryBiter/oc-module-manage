@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # OCM (OpenCart Module Manager) Installer
-# https://github.com/GregoryBiter/oc-module-manage
+# https://github.com/GregoryBiter/ocm-cli
 
 set -e
 
@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Config
-REPO_URL="https://github.com/GregoryBiter/oc-module-manage"
+REPO_URL="https://github.com/GregoryBiter/ocm-cli"
 INSTALL_DIR="$HOME/.local/share/ocm"
 BIN_DIR="$HOME/.local/bin"
 EXECUTABLE="$BIN_DIR/ocm"
@@ -61,9 +61,9 @@ install_ocm() {
     
     log_info "Скачивание OCM из GitHub..."
     if command -v curl &> /dev/null; then
-        curl -L "$REPO_URL/archive/refs/heads/master.tar.gz" -o "$TMP_DIR/ocm.tar.gz"
+        curl -L "$REPO_URL/archive/refs/heads/main.tar.gz" -o "$TMP_DIR/ocm.tar.gz"
     else
-        wget "$REPO_URL/archive/refs/heads/master.tar.gz" -O "$TMP_DIR/ocm.tar.gz"
+        wget "$REPO_URL/archive/refs/heads/main.tar.gz" -O "$TMP_DIR/ocm.tar.gz"
     fi
     
     log_info "Распаковка архива..."

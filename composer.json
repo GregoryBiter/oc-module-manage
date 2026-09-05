@@ -1,5 +1,5 @@
 {
-    "name": "gregorybiter/ocm",
+    "name": "gregorybiter/ocm-cli",
     "description": "Autonomous Artisan-like developer toolkit & CLI for OpenCart modules and extensions",
     "keywords": [
         "opencart",

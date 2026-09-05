@@ -56,20 +56,41 @@ class OpenCartService {
         }
 
         $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        foreach ($lines as $line) {
-            if (strpos(trim($line), '#') === 0) {
-                continue;
-            }
+        if (!$lines) return;
 
-            if (strpos($line, '=') === false) {
+        $vars = [];
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '' || strpos($line, '#') === 0 || strpos($line, '=') === false) {
                 continue;
             }
 
             list($name, $value) = explode('=', $line, 2);
             $name = trim($name);
+            $value = trim($value, " \t\n\r\0\x0B\"'");
+            $vars[$name] = $value;
+        }
+
+        // Рекурсивное раскрытие ${VAR}
+        $changed = true;
+        $maxPasses = 5;
+        while ($changed && $maxPasses-- > 0) {
+            $changed = false;
+            foreach ($vars as $k => $v) {
+                $expanded = preg_replace_callback('/\$\{([a-zA-Z0-9_]+)\}/', function($m) use ($vars) {
+                    return $vars[$m[1]] ?? (getenv($m[1]) ?: '');
+                }, $v);
+                if ($expanded !== $v) {
+                    $vars[$k] = $expanded;
+                    $changed = true;
+                }
+            }
+        }
+
+        foreach ($vars as $name => $value) {
             if (!isset($_ENV[$name])) {
-                $_ENV[$name] = trim($value);
-                putenv("{$name}=" . trim($value));
+                $_ENV[$name] = $value;
+                putenv("{$name}=" . $value);
             }
         }
     }
@@ -193,6 +214,13 @@ class OpenCartService {
             return false;
         }
 
+        // Если обнаружен Docker Compose и запущен контейнер php-apache, выполняем внутри него
+        $dbService = new DatabaseService();
+        $composeFile = $dbService->findDockerComposeFile($target_path);
+        if ($composeFile && $dbService->isDockerServiceRunning($composeFile, 'php-apache')) {
+            return self::runAdminModificationRefreshViaDocker($composeFile);
+        }
+
         $temp_script = tempnam(sys_get_temp_dir(), 'ocm_mod_refresh_');
         if ($temp_script === false) {
             return false;
@@ -238,8 +266,25 @@ $load_env = function($path) {
     }
 };
 
+$load_env(dirname($target_path) . '/.env');
 $load_env($target_path . '/.env');
-if (empty($_ENV['OC_PATH'])) {
+
+// Рекурсивное раскрытие ${VAR}
+foreach ($_ENV as $k => $v) {
+    if (is_string($v) && strpos($v, '${') !== false) {
+        $_ENV[$k] = preg_replace_callback('/\$\{([a-zA-Z0-9_]+)\}/', function($m) {
+            return $_ENV[$m[1]] ?? (getenv($m[1]) ?: '');
+        }, $v);
+        putenv("{$k}=" . $_ENV[$k]);
+    }
+}
+
+if (!empty($_ENV['OC_DB_HOST']) && $_ENV['OC_DB_HOST'] === 'db') {
+    $_ENV['OC_DB_HOST'] = '127.0.0.1';
+    putenv('OC_DB_HOST=127.0.0.1');
+}
+
+if (empty($_ENV['OC_PATH']) || !is_dir($_ENV['OC_PATH'])) {
     $_ENV['OC_PATH'] = $target_path;
     putenv('OC_PATH=' . $target_path);
 }
@@ -373,6 +418,124 @@ SCRIPT;
         }
 
         return true;
+    }
+
+    /**
+     * Выполнение admin refresh модификаторов внутри Docker-контейнера php-apache.
+     */
+    public static function runAdminModificationRefreshViaDocker($composeFile) {
+        $script = <<<'SCRIPT'
+<?php
+$_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+$_SERVER['HTTPS'] = false;
+$target_path = '/var/www/html';
+require_once $target_path . '/admin/config.php';
+require_once DIR_SYSTEM . 'startup.php';
+
+$registry = new Registry();
+$config = new Config();
+$config->load('default');
+$config->load('admin');
+$registry->set('config', $config);
+
+$event = new Event($registry);
+$registry->set('event', $event);
+
+if ($config->has('action_event')) {
+    foreach ($config->get('action_event') as $key => $value) {
+        foreach ($value as $priority => $action) {
+            $event->register($key, new Action($action), $priority);
+        }
+    }
+}
+
+$loader = new Loader($registry);
+$registry->set('load', $loader);
+$request = new Request();
+$registry->set('request', $request);
+$response = new Response();
+$registry->set('response', $response);
+
+$db = new DB($config->get('db_engine'), $config->get('db_hostname'), $config->get('db_username'), $config->get('db_password'), $config->get('db_database'), $config->get('db_port'));
+$registry->set('db', $db);
+
+$session = new Session($config->get('session_engine'), $registry);
+$registry->set('session', $session);
+$session->start('');
+
+$token = token(32);
+$session->data['user_token'] = $token;
+$request->get['user_token'] = $token;
+
+$prefix = defined('DB_PREFIX') ? DB_PREFIX : 'oc_';
+$user_query = $db->query("SELECT user_id FROM " . $prefix . "user WHERE status = '1' ORDER BY user_id ASC LIMIT 1");
+if ($user_query && $user_query->num_rows) {
+    $session->data['user_id'] = (int)$user_query->row['user_id'];
+}
+
+$registry->set('cache', new Cache($config->get('cache_engine'), $config->get('cache_expire')));
+$registry->set('url', new Url($config->get('site_url'), $config->get('site_ssl')));
+$registry->set('language', new Language($config->get('language_directory')));
+$registry->set('document', new Document());
+$registry->set('user', new Cart\User($registry));
+
+if ($config->has('config_autoload')) {
+    foreach ($config->get('config_autoload') as $value) {
+        $loader->config($value);
+    }
+}
+if ($config->has('language_autoload')) {
+    foreach ($config->get('language_autoload') as $value) {
+        $loader->language($value);
+    }
+}
+if ($config->has('library_autoload')) {
+    foreach ($config->get('library_autoload') as $value) {
+        $loader->library($value);
+    }
+}
+if ($config->has('model_autoload')) {
+    foreach ($config->get('model_autoload') as $value) {
+        $loader->model($value);
+    }
+}
+
+$actionRoute = 'marketplace/modification/refresh';
+if (defined('DIR_APPLICATION') && is_file(DIR_APPLICATION . 'controller/extension/modification.php')) {
+    $actionRoute = 'extension/modification/refresh';
+}
+$action = new Action($actionRoute);
+$result = $action->execute($registry, []);
+if ($result instanceof Exception) {
+    fwrite(STDERR, $result->getMessage() . "\n");
+    exit(1);
+}
+echo "OCM_REFRESH_SUCCESS\n";
+exit(0);
+SCRIPT;
+
+        $cmd = sprintf('docker compose -f %s exec -T php-apache php 2>&1', escapeshellarg($composeFile));
+        $descriptorspec = [
+            0 => ["pipe", "r"],
+            1 => ["pipe", "w"],
+            2 => ["pipe", "w"]
+        ];
+
+        $process = proc_open($cmd, $descriptorspec, $pipes);
+        if (!is_resource($process)) {
+            return false;
+        }
+
+        fwrite($pipes[0], $script);
+        fclose($pipes[0]);
+
+        $output = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        $errors = stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
+
+        $exitCode = proc_close($process);
+        return ($exitCode === 0 && strpos($output, 'OCM_REFRESH_SUCCESS') !== false);
     }
 
     public static function getInstallXmlPath() {

@@ -138,32 +138,10 @@ class ModuleService {
         $author = !empty($installXml['author']) ? $installXml['author'] : 'Unknown';
         $link = isset($installXml['link']) ? $installXml['link'] : '';
 
-        // Запись через DatabaseService (PDO с точным префиксом)
+        // Запись через DatabaseService (PDO или Docker bridge)
         try {
             $databaseService = new \Ocm\Services\DatabaseService();
-            $creds = $databaseService->getCredentials($targetPath);
-            if ($creds) {
-                $pdo = $databaseService->getPdo($targetPath);
-                $prefix = $creds['prefix'];
-
-                $delStmt = $pdo->prepare("DELETE FROM `{$prefix}modification` WHERE `code` = :code");
-                $delStmt->execute([':code' => $code]);
-
-                $insertStmt = $pdo->prepare("
-                    INSERT INTO `{$prefix}modification` 
-                    (`code`, `name`, `author`, `version`, `link`, `xml`, `status`, `date_added`) 
-                    VALUES 
-                    (:code, :name, :author, :version, :link, :xml, 1, NOW())
-                ");
-                $insertStmt->execute([
-                    ':code' => $code,
-                    ':name' => $name,
-                    ':author' => $author,
-                    ':version' => $version,
-                    ':link' => $link,
-                    ':xml' => $installXml['xml']
-                ]);
-
+            if ($databaseService->syncModificationToDb($targetPath, $code, $name, $author, $version, $link, $installXml['xml'])) {
                 $this->openCart->refreshModifications($targetPath);
                 return true;
             }

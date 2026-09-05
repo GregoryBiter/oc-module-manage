@@ -34,11 +34,14 @@ class Application extends SymfonyApplication {
         $module = new \Ocm\Services\ModuleService($fileSystem, $config, $openCart);
         $template = new \Ocm\Services\TemplateService($fileSystem);
 
+        $database = new \Ocm\Services\DatabaseService();
+
         $this->services['filesystem'] = $fileSystem;
         $this->services['config'] = $config;
         $this->services['opencart'] = $openCart;
         $this->services['module'] = $module;
         $this->services['template'] = $template;
+        $this->services['database'] = $database;
     }
 
     /**
@@ -58,6 +61,13 @@ class Application extends SymfonyApplication {
         $this->add(new \Ocm\Commands\StatusCommand());
         $this->add(new \Ocm\Commands\TemplateListCommand());
         $this->add(new \Ocm\Commands\MigrateCommand());
+
+        // База данных
+        $this->add(new \Ocm\Commands\DbInfoCommand());
+        $this->add(new \Ocm\Commands\DbQueryCommand());
+        $this->add(new \Ocm\Commands\DbCliCommand());
+        $this->add(new \Ocm\Commands\DbDumpCommand());
+        $this->add(new \Ocm\Commands\DbImportCommand());
     }
 
     /**

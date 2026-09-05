@@ -85,6 +85,13 @@ OCM (OpenCart Module Manager) 2.0.0
  cache
   cache:clear     [cc] Очистить системный кэш OpenCart (system/storage/cache)
 
+ db
+  db:cli          [db] Открыть интерактивный MySQL терминал к базе OpenCart
+  db:dump         [db:export] Создать дамп базы данных OpenCart в SQL файл
+  db:import       Импортировать SQL-файл в базу данных OpenCart
+  db:info         Показать информацию о подключении к базе данных OpenCart
+  db:query        Выполнить SQL-запрос к базе данных OpenCart
+
  make
   make:module     [create] Создать новый модуль OpenCart из шаблона
 
@@ -153,6 +160,35 @@ ocm status
 
 # Забрать файлы из OpenCart обратно в модуль (если правили код прямо в магазине):
 ocm return
+```
+
+### 6. Управление базой данных OpenCart (DB Toolkit)
+
+OCM автоматически считывает реквизиты доступа из `config.php` связанного OpenCart:
+
+```bash
+# Проверить соединение и вывести статистику БД:
+ocm db:info
+
+# Открыть интерактивный терминал MySQL:
+ocm db:cli
+# или коротко:
+ocm db
+
+# Выполнить произвольный SQL запрос:
+ocm db:query "SELECT * FROM oc_setting WHERE \`key\` = 'config_name'"
+
+# Создать полный дамп базы:
+ocm db:dump
+
+# Создать сжатый дамп только определенных таблиц:
+ocm db:dump backup.sql.gz -z --tables="oc_setting,oc_extension"
+
+# Экспортировать только таблицы с префиксом OpenCart:
+ocm db:dump oc_only.sql --prefix-only
+
+# Импортировать SQL-файл в базу:
+ocm db:import backup.sql
 ```
 
 ---

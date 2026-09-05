@@ -10,11 +10,18 @@ class ApplicationTest extends TestCase {
     private $app;
 
     protected function setUp(): void {
-        $this->testDir = sys_get_temp_dir() . '/ocm_app_test_' . uniqid();
-        mkdir($this->testDir);
-        mkdir($this->testDir . '/scripts');
-
-        if (!defined('SCRIPT_DIR')) {
+        if (defined('SCRIPT_DIR')) {
+            $this->testDir = SCRIPT_DIR;
+            if (!is_dir($this->testDir)) {
+                mkdir($this->testDir, 0777, true);
+            }
+            if (!is_dir($this->testDir . '/scripts')) {
+                mkdir($this->testDir . '/scripts', 0777, true);
+            }
+        } else {
+            $this->testDir = sys_get_temp_dir() . '/ocm_app_test_' . uniqid();
+            mkdir($this->testDir, 0777, true);
+            mkdir($this->testDir . '/scripts', 0777, true);
             define('SCRIPT_DIR', $this->testDir);
         }
 
@@ -26,7 +33,13 @@ class ApplicationTest extends TestCase {
     }
 
     protected function tearDown(): void {
-        $this->removeDir($this->testDir);
+        $scriptsDir = $this->testDir . '/scripts';
+        if (is_dir($scriptsDir)) {
+            $items = array_diff(scandir($scriptsDir), ['.', '..']);
+            foreach ($items as $item) {
+                @unlink($scriptsDir . '/' . $item);
+            }
+        }
     }
 
     private function removeDir($dir) {

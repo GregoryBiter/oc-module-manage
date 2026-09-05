@@ -1,63 +1,15 @@
 #!/bin/bash
 
-# Директория реального расположения скрипта
+# OCM CLI Wrapper (Backward compatibility)
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
-# Проверка наличия PHP
-check_php() {
-    if ! command -v php &> /dev/null; then
-        echo -e "\033[0;31m[ERROR]\033[0m PHP не найден. Пожалуйста, установите php-cli."
-        echo "Пример для Ubuntu: sudo apt install php-cli php-json php-zip"
-        exit 1
-    fi
-}
-
-# Проверка необходимых PHP расширений
-check_php_extensions() {
-    local required_extensions=("json" "fileinfo" "zip")
-    local missing_extensions=()
-
-    for ext in "${required_extensions[@]}"; do
-        if ! php -r "exit(extension_loaded('$ext') ? 0 : 1);" &>/dev/null; then
-            missing_extensions+=("$ext")
-        fi
-    done
-
-    if [ ${#missing_extensions[@]} -gt 0 ]; then
-        echo -e "\033[0;31m[ERROR]\033[0m Отсутствуют необходимые расширения PHP: ${missing_extensions[*]}"
-        echo "Пожалуйста, установите их. Пример для Ubuntu:"
-        echo "sudo apt install $(printf 'php-%s ' "${missing_extensions[@]}")"
-        exit 1
-    fi
-}
-
-# Запуск PHP скрипта
-run_script() {
-    # Вывод логотипа "OCMU"
-    echo "OCMU - OpenCart Modules Utility (PHP)"
-    
-    # Определяем путь к основному скрипту
-    # Если запускаем из установленного пакета
-    if [ -f "/usr/share/oc-module-manage/oc-module.php" ]; then
-        PHP_SCRIPT="/usr/share/oc-module-manage/oc-module.php"
-    # Если запускаем из директории разработки
-    elif [ -f "$SCRIPT_DIR/oc-module.php" ]; then
-        PHP_SCRIPT="$SCRIPT_DIR/oc-module.php"
-    else
-        echo "Ошибка: не найден файл oc-module.php"
-        exit 1
-    fi
-    
-    # Сделаем скрипт исполняемым, если он еще не исполняемый
-    if [ ! -x "$PHP_SCRIPT" ]; then
-        chmod +x "$PHP_SCRIPT"
-    fi
-    
-    # Запуск PHP скрипта с передачей всех аргументов
-    php "$PHP_SCRIPT" "$@"
-}
-
-# Основной блок
-check_php
-check_php_extensions
-run_script "$@"
+if [ -x "$SCRIPT_DIR/bin/ocm" ]; then
+    exec "$SCRIPT_DIR/bin/ocm" "$@"
+elif [ -f "$SCRIPT_DIR/bin/ocm" ]; then
+    exec php "$SCRIPT_DIR/bin/ocm" "$@"
+elif [ -f "$SCRIPT_DIR/oc-module.php" ]; then
+    exec php "$SCRIPT_DIR/oc-module.php" "$@"
+else
+    echo "Error: OCM executable not found in $SCRIPT_DIR."
+    exit 1
+fi

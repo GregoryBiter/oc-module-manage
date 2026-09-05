@@ -9,31 +9,67 @@ class ConfigService {
     protected $currentDir;
     protected $jsonFile;
     protected $filesJson;
+    protected $ocmDir;
 
     public function __construct($currentDir = null) {
         $this->currentDir = $currentDir ?: (defined('CURRENT_DIR') ? CURRENT_DIR : getcwd());
         $this->jsonFile = $this->currentDir . '/opencart-module.json';
-        $this->filesJson = $this->currentDir . '/.ocm_files.json';
+        $this->ocmDir = $this->currentDir . '/.ocm';
+        
+        // Приоритет: .ocm/files.json, затем legacy .ocm_files.json
+        if (file_exists($this->ocmDir . '/files.json')) {
+            $this->filesJson = $this->ocmDir . '/files.json';
+        } elseif (file_exists($this->currentDir . '/.ocm_files.json')) {
+            $this->filesJson = $this->currentDir . '/.ocm_files.json';
+        } else {
+            $this->filesJson = $this->ocmDir . '/files.json';
+        }
+    }
+
+    public function ensureOcmDir() {
+        if (!is_dir($this->ocmDir)) {
+            mkdir($this->ocmDir, 0777, true);
+        }
     }
 
     public function loadJson($file) {
         if (file_exists($file)) {
-            return json_decode(file_get_contents($file), true) ?: [];
+            $content = file_get_contents($file);
+            return json_decode($content, true) ?: [];
         }
         return [];
     }
 
     public function saveJson($file, $data) {
+        $dir = dirname($file);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
         file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
     public function loadFilesList() {
-        $data = $this->loadJson($this->filesJson);
-        return isset($data['files']) ? $data['files'] : [];
+        // Проверяем сначала новый путь .ocm/files.json
+        if (file_exists($this->ocmDir . '/files.json')) {
+            $data = $this->loadJson($this->ocmDir . '/files.json');
+            if (isset($data['files'])) return $data['files'];
+        }
+
+        // Проверяем legacy .ocm_files.json
+        $legacyFile = $this->currentDir . '/.ocm_files.json';
+        if (file_exists($legacyFile)) {
+            $data = $this->loadJson($legacyFile);
+            return isset($data['files']) ? $data['files'] : [];
+        }
+
+        return [];
     }
 
     public function saveFilesList($files) {
-        $this->saveJson($this->filesJson, ['files' => $files]);
+        $this->ensureOcmDir();
+        $this->saveJson($this->ocmDir . '/files.json', ['files' => $files]);
+        // Также сохраняем legacy .ocm_files.json для обратной совместимости
+        $this->saveJson($this->currentDir . '/.ocm_files.json', ['files' => $files]);
     }
 
     public function loadModuleMetadata() {
@@ -50,12 +86,41 @@ class ConfigService {
     }
 
     /**
+     * Сохранить целевой путь к OpenCart.
+     */
+    public function saveOpenCartTarget($path) {
+        $this->ensureOcmDir();
+        $realPath = realpath($path) ?: $path;
+        file_put_contents($this->ocmDir . '/target', $realPath . "\n");
+        // Дублируем в legacy .opencart
+        file_put_contents($this->currentDir . '/.opencart', $realPath . "\n");
+    }
+
+    /**
      * Поиск путей к OpenCart.
      */
     public function findOpenCartPaths() {
         $paths = [];
-        
-        // .opencart
+
+        // 1. Переменная окружения OPENCART_DIR или OC_PATH
+        $envPath = getenv('OPENCART_DIR') ?: getenv('OC_PATH');
+        if ($envPath && is_dir($envPath)) {
+            $paths[] = realpath($envPath);
+        }
+
+        // 2. .ocm/target (новый стандарт)
+        $targetFile = $this->ocmDir . '/target';
+        if (file_exists($targetFile)) {
+            $lines = file($targetFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            foreach ($lines as $line) {
+                $path = trim($line);
+                if (!empty($path) && is_dir($path)) {
+                    $paths[] = realpath($path);
+                }
+            }
+        }
+
+        // 3. .opencart
         $opencartFile = $this->currentDir . '/.opencart';
         if (file_exists($opencartFile)) {
             $lines = file($opencartFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -67,21 +132,19 @@ class ConfigService {
             }
         }
 
-        // .path-opencart (legacy)
-        if (empty($paths)) {
-            $legacyFile = $this->currentDir . '/.path-opencart';
-            if (file_exists($legacyFile)) {
-                $path = trim(file_get_contents($legacyFile));
-                if (!empty($path) && is_dir($path)) {
-                    $paths[] = realpath($path);
-                }
+        // 4. .path-opencart (legacy)
+        $legacyFile = $this->currentDir . '/.path-opencart';
+        if (file_exists($legacyFile)) {
+            $path = trim(file_get_contents($legacyFile));
+            if (!empty($path) && is_dir($path)) {
+                $paths[] = realpath($path);
             }
         }
 
-        // Search upwards for config.php
+        // 5. Поиск вверх по дереву папок наличия config.php и admin/config.php
         if (empty($paths)) {
             $dir = $this->currentDir;
-            while ($dir !== '/') {
+            while ($dir !== '/' && $dir !== '' && dirname($dir) !== $dir) {
                 if (file_exists($dir . '/config.php') && file_exists($dir . '/admin/config.php')) {
                     $paths[] = realpath($dir);
                     break;
@@ -90,7 +153,7 @@ class ConfigService {
             }
         }
 
-        return $paths;
+        return array_values(array_unique($paths));
     }
 
     public function parseInstallXmlMetadata() {
@@ -100,21 +163,40 @@ class ConfigService {
         $xmlContent = file_get_contents($xmlFile);
         if (!$xmlContent) return null;
 
-        $dom = new \DOMDocument('1.0', 'UTF-8');
-        if (!@$dom->loadXML($xmlContent)) return null;
+        if (class_exists('\DOMDocument')) {
+            $dom = new \DOMDocument('1.0', 'UTF-8');
+            if (@$dom->loadXML($xmlContent)) {
+                $read = function($tag) use ($dom) {
+                    $node = $dom->getElementsByTagName($tag)->item(0);
+                    return $node ? trim($node->nodeValue) : '';
+                };
 
-        $read = function($tag) use ($dom) {
-            $node = $dom->getElementsByTagName($tag)->item(0);
-            return $node ? trim($node->nodeValue) : '';
+                return [
+                    'xml' => $xmlContent,
+                    'code' => $read('code'),
+                    'name' => $read('name'),
+                    'version' => $read('version'),
+                    'author' => $read('author'),
+                    'link' => $read('link')
+                ];
+            }
+        }
+
+        // Безопасный regex-фоллбэк для систем без ext-dom
+        $extractTag = function($tag) use ($xmlContent) {
+            if (preg_match('#<' . preg_quote($tag, '#') . '(?:\s+[^>]*)?>(.*?)</' . preg_quote($tag, '#') . '>#is', $xmlContent, $matches)) {
+                return trim(strip_tags($matches[1]));
+            }
+            return '';
         };
 
         return [
             'xml' => $xmlContent,
-            'code' => $read('code'),
-            'name' => $read('name'),
-            'version' => $read('version'),
-            'author' => $read('author'),
-            'link' => $read('link')
+            'code' => $extractTag('code'),
+            'name' => $extractTag('name'),
+            'version' => $extractTag('version'),
+            'author' => $extractTag('author'),
+            'link' => $extractTag('link')
         ];
     }
 
@@ -153,18 +235,39 @@ class ConfigService {
      * Миграция данных из старого формата в новый.
      */
     public function migrateOldFormat() {
-        if (!file_exists($this->jsonFile)) return false;
-        
-        $data = $this->loadJson($this->jsonFile);
-        if (!$data || !isset($data['files'])) return false;
-        
-        $files = $data['files'];
-        $this->saveFilesList($files);
-        
-        unset($data['files']);
-        $this->saveModuleMetadata($data);
-        
-        return true;
+        $migrated = false;
+
+        // Миграция files из opencart-module.json
+        if (file_exists($this->jsonFile)) {
+            $data = $this->loadJson($this->jsonFile);
+            if ($data && isset($data['files'])) {
+                $files = $data['files'];
+                $this->saveFilesList($files);
+                unset($data['files']);
+                $this->saveModuleMetadata($data);
+                $migrated = true;
+            }
+        }
+
+        // Миграция .ocm_files.json в .ocm/files.json
+        $legacyFiles = $this->currentDir . '/.ocm_files.json';
+        $newFiles = $this->ocmDir . '/files.json';
+        if (file_exists($legacyFiles) && !file_exists($newFiles)) {
+            $this->ensureOcmDir();
+            copy($legacyFiles, $newFiles);
+            $migrated = true;
+        }
+
+        // Миграция .opencart в .ocm/target
+        $legacyOpenCart = $this->currentDir . '/.opencart';
+        $newTarget = $this->ocmDir . '/target';
+        if (file_exists($legacyOpenCart) && !file_exists($newTarget)) {
+            $this->ensureOcmDir();
+            copy($legacyOpenCart, $newTarget);
+            $migrated = true;
+        }
+
+        return $migrated;
     }
 
     /**
@@ -192,24 +295,23 @@ class ConfigService {
         return $first . implode('', array_map('ucfirst', $components));
     }
 
-    /**
-     * Получить путь к директории модуля (upload).
-     */
     public function getModuleDir() {
         return $this->currentDir . '/upload';
     }
 
-    /**
-     * Получить путь к основному JSON файлу.
-     */
     public function getJsonFile() {
         return $this->jsonFile;
     }
 
-    /**
-     * Получить путь к файлу со списком файлов.
-     */
     public function getFilesJson() {
-        return $this->currentDir . '/.ocm_files.json';
+        return $this->filesJson;
+    }
+
+    public function getCurrentDir() {
+        return $this->currentDir;
+    }
+
+    public function getOcmDir() {
+        return $this->ocmDir;
     }
 }

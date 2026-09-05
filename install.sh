@@ -79,11 +79,10 @@ install_ocm() {
     cp -rp "$TMP_DIR"/* "$INSTALL_DIR/"
     
     log_info "Настройка прав доступа..."
-    chmod +x "$INSTALL_DIR/ocm"
-    chmod +x "$INSTALL_DIR/oc-module.php"
+    chmod +x "$INSTALL_DIR/bin/ocm" "$INSTALL_DIR/ocm" "$INSTALL_DIR/oc-module.php" 2>/dev/null || true
     
     log_info "Создание символьной ссылки в $BIN_DIR..."
-    ln -sf "$INSTALL_DIR/ocm" "$EXECUTABLE"
+    ln -sf "$INSTALL_DIR/bin/ocm" "$EXECUTABLE"
     
     log_info "Установка PHP-зависимостей через Composer..."
     cd "$INSTALL_DIR"

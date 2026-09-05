@@ -26,4 +26,26 @@ class BuildCommandTest extends CommandTestCase {
         $this->assertTrue(file_exists($buildUploadDir . '/admin/controller/test.php'));
         $this->assertTrue(file_exists($buildUploadDir . '/catalog/view/test.twig'));
     }
+
+    public function testHandleBuildsOcmodZipFromUploadDir() {
+        mkdir($this->testDir . '/upload/admin/controller', 0777, true);
+        file_put_contents($this->testDir . '/upload/admin/controller/test.php', '<?php // controller');
+        file_put_contents($this->testDir . '/install.xml', '<modification><code>demo</code></modification>');
+
+        $command = new BuildCommand();
+        $command->setApplication($this->app);
+
+        $input = new Input(['ocm', 'build', '-a']);
+        $command->handle($input, $this->output);
+
+        $moduleName = basename($this->testDir);
+        $zipPath = $this->testDir . "/{$moduleName}.ocmod.zip";
+        $this->assertTrue(file_exists($zipPath));
+
+        $zip = new \ZipArchive();
+        $this->assertTrue($zip->open($zipPath) === true);
+        $this->assertNotFalse($zip->locateName('upload/admin/controller/test.php'));
+        $this->assertNotFalse($zip->locateName('install.xml'));
+        $zip->close();
+    }
 }

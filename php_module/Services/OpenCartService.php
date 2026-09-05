@@ -364,23 +364,39 @@ SCRIPT;
             return null;
         }
 
-        $dom = new \DOMDocument('1.0', 'UTF-8');
-        if (!@$dom->loadXML($xml_content)) {
-            return null;
+        if (class_exists('\DOMDocument')) {
+            $dom = new \DOMDocument('1.0', 'UTF-8');
+            if (@$dom->loadXML($xml_content)) {
+                $read = function($tag, $default = '') use ($dom) {
+                    $node = $dom->getElementsByTagName($tag)->item(0);
+                    return $node ? trim($node->nodeValue) : $default;
+                };
+
+                return [
+                    'xml' => $xml_content,
+                    'code' => $read('code', ''),
+                    'name' => $read('name', ''),
+                    'version' => $read('version', ''),
+                    'author' => $read('author', ''),
+                    'link' => $read('link', '')
+                ];
+            }
         }
 
-        $read = function($tag, $default = '') use ($dom) {
-            $node = $dom->getElementsByTagName($tag)->item(0);
-            return $node ? trim($node->nodeValue) : $default;
+        $extractTag = function($tag, $default = '') use ($xml_content) {
+            if (preg_match('#<' . preg_quote($tag, '#') . '(?:\s+[^>]*)?>(.*?)</' . preg_quote($tag, '#') . '>#is', $xml_content, $matches)) {
+                return trim(strip_tags($matches[1]));
+            }
+            return $default;
         };
 
         return [
             'xml' => $xml_content,
-            'code' => $read('code', ''),
-            'name' => $read('name', ''),
-            'version' => $read('version', ''),
-            'author' => $read('author', ''),
-            'link' => $read('link', '')
+            'code' => $extractTag('code', ''),
+            'name' => $extractTag('name', ''),
+            'version' => $extractTag('version', ''),
+            'author' => $extractTag('author', ''),
+            'link' => $extractTag('link', '')
         ];
     }
 

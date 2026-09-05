@@ -5,153 +5,230 @@ namespace Ocm\Commands;
 use Ocm\Base\Command;
 use Ocm\Base\Input;
 use Ocm\Base\Output;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Команда режима разработки.
+ * Команда режима разработки с отслеживанием файлов (module:dev / dev / watch).
  */
 class DevCommand extends Command {
-    protected $description = 'Режим наблюдения за изменениями (development mode)';
+    protected $name = 'module:dev';
+    protected $description = 'Режим наблюдения за изменениями файлов и авто-синхронизация';
+
+    protected function configure() {
+        $this->setName('module:dev')
+             ->setAliases(['dev', 'watch'])
+             ->setDescription('Отслеживание изменений в upload/ и install.xml с мгновенной синхронизацией в OpenCart');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int {
+        $io = new SymfonyStyle($input, $output);
+        $io->title('OCM: Режим разработки (Watch Mode)');
+
+        $config = $this->getService('config');
+        $fileSystem = $this->getService('filesystem');
+        $module = $this->getService('module');
+
+        $opencartPaths = $config->findOpenCartPaths();
+        if (empty($opencartPaths)) {
+            $io->error([
+                'Директория OpenCart не найдена!',
+                'Укажите путь через: ocm link <путь_к_opencart>'
+            ]);
+            return self::FAILURE;
+        }
+
+        // Первичная установка
+        $io->section('Выполняется первичная установка файлов...');
+        $installCmd = new InstallCommand();
+        $installCmd->setApplication($this->getApplication());
+        $installCmd->execute($input, $output);
+
+        $moduleDir = $config->getModuleDir();
+        $ocmodFile = $config->getCurrentDir() . '/install.xml';
+
+        $io->section('Режим наблюдения активирован (Ctrl+C для выхода)');
+        $io->text([
+            "Папка модуля: <info>{$moduleDir}</info>",
+            "Целевые установки OpenCart:",
+            " - " . implode("\n - ", $opencartPaths)
+        ]);
+
+        // Начальное состояние файлов
+        $filesMap = [];
+        if (is_dir($moduleDir)) {
+            $allFiles = $fileSystem->findAllFiles($moduleDir, $moduleDir);
+            foreach ($allFiles as $file) {
+                $filesMap[$file] = filemtime($moduleDir . '/' . $file);
+            }
+        }
+
+        $ocmodMtime = file_exists($ocmodFile) ? filemtime($ocmodFile) : 0;
+
+        // Основной цикл слежения
+        while (true) {
+            clearstatcache();
+
+            // 1. Проверка install.xml
+            if (file_exists($ocmodFile)) {
+                $currentOcmodMtime = filemtime($ocmodFile);
+                if ($currentOcmodMtime !== $ocmodMtime) {
+                    $io->text("\n<comment>[" . date('H:i:s') . "] Изменен install.xml. Обновление модификаторов...</comment>");
+                    foreach ($opencartPaths as $targetPath) {
+                        try {
+                            $module->handleOcmod($targetPath);
+                            $module->syncWithDb($targetPath, array_keys($filesMap));
+                            $io->text("  Синхронизирован модификатор для: {$targetPath}");
+                        } catch (\Throwable $e) {
+                            $io->warning("Ошибка обновления модификатора: " . $e->getMessage());
+                        }
+                    }
+                    $ocmodMtime = $currentOcmodMtime;
+                }
+            }
+
+            // 2. Проверка файлов в upload/
+            if (is_dir($moduleDir)) {
+                $currentFiles = $fileSystem->findAllFiles($moduleDir, $moduleDir);
+                $currentFilesMap = [];
+                foreach ($currentFiles as $file) {
+                    $currentFilesMap[$file] = filemtime($moduleDir . '/' . $file);
+                }
+
+                // Измененные или добавленные файлы
+                foreach ($currentFilesMap as $file => $mtime) {
+                    if (!isset($filesMap[$file]) || $filesMap[$file] !== $mtime) {
+                        $io->text("\n<info>[" . date('H:i:s') . "] Изменен или добавлен:</info> {$file}");
+                        foreach ($opencartPaths as $targetPath) {
+                            $src = $moduleDir . '/' . $file;
+                            $dest = $targetPath . '/' . $file;
+                            $destDir = dirname($dest);
+                            if (!is_dir($destDir)) mkdir($destDir, 0777, true);
+                            copy($src, $dest);
+                            $io->text("  -> Синхронизировано в {$targetPath}");
+                        }
+                        $filesMap[$file] = $mtime;
+
+                        // Обновляем список отслеживаемых
+                        $tracked = $config->loadFilesList();
+                        if (!in_array($file, $tracked)) {
+                            $tracked[] = $file;
+                            sort($tracked);
+                            $config->saveFilesList($tracked);
+                        }
+                    }
+                }
+
+                // Удаленные файлы
+                foreach ($filesMap as $file => $mtime) {
+                    if (!isset($currentFilesMap[$file])) {
+                        $io->text("\n<comment>[" . date('H:i:s') . "] Удален:</comment> {$file}");
+                        foreach ($opencartPaths as $targetPath) {
+                            $dest = $targetPath . '/' . $file;
+                            if (file_exists($dest)) {
+                                unlink($dest);
+                                $io->text("  -> Удален из {$targetPath}");
+                            }
+                        }
+                        unset($filesMap[$file]);
+
+                        $tracked = $config->loadFilesList();
+                        $key = array_search($file, $tracked);
+                        if ($key !== false) {
+                            unset($tracked[$key]);
+                            $config->saveFilesList(array_values($tracked));
+                        }
+                    }
+                }
+            }
+
+            sleep(1);
+        }
+
+        return self::SUCCESS;
+    }
 
     public function handle(Input $input, Output $output) {
         $fileSystem = $this->app->getService('filesystem');
         $config = $this->app->getService('config');
         $module = $this->app->getService('module');
-        $openCart = $this->app->getService('opencart');
 
         $output->info("Выполняется первичная установка...");
-        
-        // Вызов установки
         $installCmd = new InstallCommand();
         $installCmd->setApplication($this->app);
         $installCmd->handle($input, $output);
-        
-        $opencart_paths = defined('OPENCART_PATHS') ? OPENCART_PATHS : [$config->findOpenCartPaths()[0]];
-        
-        $output->comment("\nЗапущен режим наблюдения. Нажмите Ctrl+C для выхода.");
-        $output->writeln("Наблюдаем за папкой модуля: " . getcwd());
-        $output->writeln("Пути синхронизации (OpenCart):\n - " . implode("\n - ", $opencart_paths));
-        
-        // Начальное состояние файлов в upload/
-        $moduleDir = $config->getModuleDir();
-        $files_map = [];
-        $all_files = $fileSystem->findAllFiles($moduleDir, $moduleDir);
-        foreach ($all_files as $file) {
-            $files_map[$file] = filemtime($moduleDir . '/' . $file);
+
+        $opencartPaths = defined('OPENCART_PATHS') ? OPENCART_PATHS : $config->findOpenCartPaths();
+        if (empty($opencartPaths)) {
+            $output->error("Директория OpenCart не найдена.");
+            return;
         }
-        
-        // Начальное состояние install.xml
-        $ocmod_file = getcwd() . '/install.xml';
-        $ocmod_mtime = file_exists($ocmod_file) ? filemtime($ocmod_file) : 0;
-        
-        // Основной цикл наблюдения
+
+        $output->comment("\nЗапущен режим наблюдения. Нажмите Ctrl+C для выхода.");
+
+        $moduleDir = $config->getModuleDir();
+        $filesMap = [];
+        if (is_dir($moduleDir)) {
+            $allFiles = $fileSystem->findAllFiles($moduleDir, $moduleDir);
+            foreach ($allFiles as $file) {
+                $filesMap[$file] = filemtime($moduleDir . '/' . $file);
+            }
+        }
+
+        $ocmodFile = getcwd() . '/install.xml';
+        $ocmodMtime = file_exists($ocmodFile) ? filemtime($ocmodFile) : 0;
+
         while (true) {
             clearstatcache();
-            
-            // 1. Проверка install.xml
-            if (file_exists($ocmod_file)) {
-                $current_ocmod_mtime = filemtime($ocmod_file);
-                if ($current_ocmod_mtime != $ocmod_mtime) {
+            if (file_exists($ocmodFile)) {
+                $currentOcmodMtime = filemtime($ocmodFile);
+                if ($currentOcmodMtime != $ocmodMtime) {
                     $output->info("\n[CHANGE] Обнаружены изменения в install.xml. Обновление модификаторов...");
-                    foreach ($opencart_paths as $target_path) {
-                        $module->handleOcmod($target_path);
-                        $module->syncWithDb($target_path, array_keys($files_map));
+                    foreach ($opencartPaths as $targetPath) {
+                        try {
+                            $module->handleOcmod($targetPath);
+                            $module->syncWithDb($targetPath, array_keys($filesMap));
+                        } catch (\Throwable $e) {}
                     }
-                    $ocmod_mtime = $current_ocmod_mtime;
+                    $ocmodMtime = $currentOcmodMtime;
                 }
             }
-            
-            // 2. Проверка файлов в upload/
-            $current_files = $fileSystem->findAllFiles($moduleDir, $moduleDir);
-            $current_files_map = [];
-            foreach ($current_files as $file) {
-                $current_files_map[$file] = filemtime($moduleDir . '/' . $file);
-            }
-            
-            // Ищем изменения или новые файлы
-            foreach ($current_files_map as $file => $mtime) {
-                if (!isset($files_map[$file]) || $files_map[$file] != $mtime) {
-                    $output->info("\n[CHANGE] Файл изменен или добавлен: {$file}");
-                    foreach ($opencart_paths as $target_path) {
-                        $this->syncFileToPath($file, $target_path, $output);
+
+            if (is_dir($moduleDir)) {
+                $currentFiles = $fileSystem->findAllFiles($moduleDir, $moduleDir);
+                $currentFilesMap = [];
+                foreach ($currentFiles as $file) {
+                    $currentFilesMap[$file] = filemtime($moduleDir . '/' . $file);
+                }
+
+                foreach ($currentFilesMap as $file => $mtime) {
+                    if (!isset($filesMap[$file]) || $filesMap[$file] != $mtime) {
+                        $output->info("\n[CHANGE] Файл изменен или добавлен: {$file}");
+                        foreach ($opencartPaths as $targetPath) {
+                            $src = $moduleDir . '/' . $file;
+                            $dest = $targetPath . '/' . $file;
+                            $destDir = dirname($dest);
+                            if (!is_dir($destDir)) mkdir($destDir, 0777, true);
+                            copy($src, $dest);
+                        }
+                        $filesMap[$file] = $mtime;
                     }
-                    $files_map[$file] = $mtime;
+                }
+
+                foreach ($filesMap as $file => $mtime) {
+                    if (!isset($currentFilesMap[$file])) {
+                        $output->comment("\n[DELETE] Файл удален: {$file}");
+                        foreach ($opencartPaths as $targetPath) {
+                            $dest = $targetPath . '/' . $file;
+                            if (file_exists($dest)) unlink($dest);
+                        }
+                        unset($filesMap[$file]);
+                    }
                 }
             }
-            
-            // Ищем удаленные файлы
-            foreach ($files_map as $file => $mtime) {
-                if (!isset($current_files_map[$file])) {
-                    $output->comment("\n[DELETE] Файл удален: {$file}");
-                    foreach ($opencart_paths as $target_path) {
-                        $this->removeFileFromPath($file, $target_path, $output, $opencart_paths[0]);
-                    }
-                    unset($files_map[$file]);
-                }
-            }
-            
+
             sleep(1);
         }
     }
-
-    private function syncFileToPath($relative_path, $target_path, Output $output) {
-        $fileSystem = $this->app->getService('filesystem');
-        $config = $this->app->getService('config');
-
-        if (!is_dir($target_path)) return;
-        
-        $src_path = $config->getModuleDir() . '/' . $relative_path;
-
-        $dest_path = $target_path . '/' . $relative_path;
-        
-        $dest_dir = dirname($dest_path);
-        if (!is_dir($dest_dir)) {
-            mkdir($dest_dir, 0777, true);
-        }
-        
-        if (copy($src_path, $dest_path)) {
-            $output->writeln("  Синхронизировано в {$target_path}: {$relative_path}");
-            
-            // Обновляем локальный список если нужно
-            $files = $config->loadFilesList();
-            if (!in_array($relative_path, $files)) {
-                $files[] = $relative_path;
-                sort($files);
-                $config->saveFilesList($files);
-            }
-        }
-    }
-    
-    private function removeFileFromPath($relative_path, $target_path, Output $output, $main_path) {
-        $fileSystem = $this->app->getService('filesystem');
-        $config = $this->app->getService('config');
-
-        $dest_path = $target_path . '/' . $relative_path;
-        
-        if (file_exists($dest_path)) {
-            unlink($dest_path);
-            $output->writeln("  Удалено из {$target_path}: {$relative_path}");
-        }
-        
-        // Чистка пустых папок
-        $parent_dir = dirname($dest_path);
-        while ($parent_dir != $target_path && is_dir($parent_dir)) {
-            if (count(scandir($parent_dir)) <= 2) {
-                rmdir($parent_dir);
-                $parent_dir = dirname($parent_dir);
-            } else {
-                break;
-            }
-        }
-    
-        // Обновляем локальный список если нужно (только один раз для основного пути)
-        if ($target_path === $main_path) {
-            $files = $config->loadFilesList();
-            $key = array_search($relative_path, $files);
-            if ($key !== false) {
-                unset($files[$key]);
-                $config->saveFilesList(array_values($files));
-            }
-        }
-    }
-
 }

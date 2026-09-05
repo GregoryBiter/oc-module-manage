@@ -1,197 +1,204 @@
 # OpenCart Module Manager (OCM)
 
-OpenCart Module Management Tool - инструмент командной строки для управления модулями OpenCart.
+**OCM** — это инструмент командной строки (CLI) для быстрой и удобной разработки модулей OpenCart, созданный по подобию **Laravel Artisan**, но полностью автономный от самого движка OpenCart.
 
-## Описание
-
-OCM - это PHP-инструмент, который упрощает разработку и управление модулями OpenCart. Он предоставляет команды для создания, установки, сборки и разработки модулей с использованием системы шаблонов.
+---
 
 ## Возможности
 
-- 🚀 Создание новых модулей OpenCart из шаблонов
-- 📦 Установка и удаление модулей
-- 🔧 Режим разработки с отслеживанием изменений файлов
-- 🏗️ Сборка модулей для распространения
-- 📋 Система шаблонов для генерации модулей
+- 🚀 **Artisan DX**: понятные неймспейсы команд (`make:module`, `module:dev`, `module:build`, `ocmod:refresh`, `cache:clear`) и короткие привычные алиасы (`dev`, `build`, `install`, `create`, `info`).
+- ⚡ **Мгновенная установка через Composer**: глобальный пакет для Linux, macOS и Windows.
+- 📦 **Надежная сборка `*.ocmod.zip`**: автоматическая упаковка только нужных файлов (`upload/`, `install.xml`, `install.php`) без мусора и репозиторных файлов.
+- 🔄 **Режим Watch (`ocm dev`)**: мгновенная синхронизация изменений в установку OpenCart в реальном времени.
+- 🛠️ **Инструменты OpenCart**: автономный сброс модификаторов (`ocm ocmod:refresh`) и очистка системного кэша (`ocm cache:clear`).
+- 📋 **Каскадные шаблоны**: поддержка встроенных, глобальных пользовательских (`~/.config/ocm/templates`) и проектных (`./.ocm/templates`) шаблонов.
+- 🔗 **Привязка к OpenCart**: простая команда `ocm link /path/to/opencart` без ручного редактирования файлов.
+
+---
 
 ## Установка
 
-Для установки OCM выполните следующую команду в терминале:
+### 1. Глобальная установка через Composer (Рекомендуется)
+
+```bash
+composer global require gregorybiter/oc-module-manage
+```
+
+> [!TIP]
+> Убедитесь, что каталог глобальных бинарников Composer добавлен в переменную `PATH`.
+> Для Linux/macOS добавьте в `~/.bashrc` или `~/.zshrc`:
+> ```bash
+> export PATH="$HOME/.config/composer/vendor/bin:$HOME/.composer/vendor/bin:$PATH"
+> ```
+
+Обновление утилиты до последней версии:
+```bash
+composer global update gregorybiter/oc-module-manage
+```
+
+---
+
+### 2. Локальная установка в проект модуля
+
+Вы можете установить OCM как dev-зависимость прямо в репозиторий вашего модуля:
+
+```bash
+composer require --dev gregorybiter/oc-module-manage
+```
+
+И запускать через:
+```bash
+./vendor/bin/ocm list
+```
+
+---
+
+### 3. Установка через Shell-скрипт (Legacy)
 
 ```bash
 curl -sL https://raw.githubusercontent.com/GregoryBiter/oc-module-manage/master/install.sh | bash
 ```
 
-Или, если вы уже клонировали репозиторий:
+---
 
-```bash
-chmod +x install.sh
-./install.sh
-```
+## Системные требования
 
-## Требования
-
-- **PHP** >= 7.4
-- **Composer** - для управления PHP-зависимостями
-- **php-cli** - интерфейс командной строки PHP
-- **php-json**, **php-zip**, **php-mbstring** - необходимые расширения PHP
-
-Зависимости автоматически устанавливаются при установке пакета.
-
-## Использование
-
-После установки команда `ocm` доступна из любой директории:
-
-```bash
-# Показать справку
-ocm help
-
-# Инициализировать новый модуль
-ocm init
-
-# Создать модуль из шаблона
-ocm create
-
-# Установить модуль в OpenCart
-ocm install
-
-# Запустить режим разработки
-ocm dev
-
-# Собрать модуль для распространения
-ocm build
-
-# Удалить модуль из OpenCart
-ocm remove
-
-# Вернуть файлы из OpenCart в проект
-ocm return
-```
-
-## Примеры
-
-### Создание нового модуля
-
-```bash
-# Переходим в директорию проектов
-cd ~/projects
-
-# Инициализируем новый модуль
-ocm init
-# Введите название модуля: my_awesome_module
-
-# Создаем файлы модуля из шаблона
-ocm create
-
-# Запускаем режим разработки
-ocm dev
-```
-
-### Установка модуля в OpenCart
-
-```bash
-# Находясь в директории модуля
-ocm install
-
-# Сборка модуля с архивом
-ocm build -a
-```
-
-## Структура проекта
-
-```
-my_module/
-├── opencart-module.json    # Конфигурация модуля
-├── upload/                 # Файлы модуля для OpenCart
-│   └── admin/
-│       ├── controller/
-│       ├── language/
-│       ├── model/
-│       └── view/
-└── .path-opencart         # Путь к установке OpenCart (опционально)
-```
-
-## Конфигурация
-
-### Файл opencart-module.json
-
-```json
-{
-    "module_name": "my_module",
-    "display_name": "My Awesome Module",
-    "version": "1.0.0",
-    "author": "Your Name",
-    "description": "Description of my module"
-}
-```
-
-### Указание пути к OpenCart
-
-Создайте файл `.path-opencart` в корне проекта:
-
-```bash
-echo "/path/to/your/opencart" > .path-opencart
-```
-
-## Шаблоны
-
-OCM поддерживает несколько шаблонов модулей:
-
-- **my_module** - базовый шаблон с полной функциональностью
-- **ocm_gbt_extension_module** - упрощенный шаблон
-
-## Режим разработки
-
-Команда `ocm dev` запускает отслеживание изменений файлов и автоматически синхронизирует их с установкой OpenCart.
-
-## Сборка и развертывание
-
-### Локальная сборка
-
-```bash
-# Сборка без архива
-ocm build
-
-# Сборка с созданием ZIP архива
-ocm build -a
-```
-
-### Обновление OCM
-
-Для обновления просто запустите команду установки еще раз.
-
-## Устранение неполадок
-
-### Проблемы с PHP
-
-```bash
-# Проверка версии PHP
-php --version
-
-# Установка необходимых расширений
-sudo apt install php-cli php-json
-```
-
-### Проблемы с правами доступа
-
-```bash
-# Убедитесь что OCM имеет права на запись в директорию OpenCart
-sudo chown -R $USER:$USER /path/to/opencart
-```
-
-## Поддержка
-
-- **GitHub**: [https://github.com/GregoryBiter/oc-module-manage](https://github.com/GregoryBiter/oc-module-manage)
-- **Issues**: [https://github.com/GregoryBiter/oc-module-manage/issues](https://github.com/GregoryBiter/oc-module-manage/issues)
-
-## Лицензия
-
-MIT License. См. файл [LICENSE](LICENSE) для подробностей.
-
-## Автор
-
-Gregory Biter - [your.email@example.com](mailto:your.email@example.com)
+- **PHP** >= 7.4 (поддерживаются PHP 7.4, 8.0, 8.1, 8.2, 8.3, 8.4)
+- **Composer**
+- Расширения PHP: `ext-json`, `ext-zip`, `ext-fileinfo` (для строгой валидации XML рекомендуется `ext-dom`)
 
 ---
 
-**OCM** - делает разработку модулей OpenCart быстрой и приятной! 🚀
+## Использование и Команды
+
+Выполните `ocm list` для просмотра всех доступных команд или `ocm <команда> --help` для подробной справки по опциям.
+
+```
+OCM (OpenCart Module Manager) 2.0.0
+
+Доступные команды:
+  link            Привязать текущий модуль к директории OpenCart
+  status          [info] Показать статус текущего модуля и привязки к OpenCart
+  init            Инициализация метаданных модуля и списка файлов (.ocm/files.json)
+  migrate         Миграция конфигурации и списков файлов в новый формат .ocm/
+
+ cache
+  cache:clear     [cc] Очистить системный кэш OpenCart (system/storage/cache)
+
+ make
+  make:module     [create] Создать новый модуль OpenCart из шаблона
+
+ module
+  module:build    [build] Сборка готового к распространению архива (*.ocmod.zip)
+  module:dev      [dev|watch] Режим наблюдения за изменениями файлов и авто-синхронизация
+  module:install  [install] Копирование файлов модуля в установку OpenCart
+  module:pull     [return] Возврат файлов из OpenCart в папку модуля (upload/)
+  module:remove   [remove] Удаление файлов модуля и модификаций из OpenCart
+
+ ocmod
+  ocmod:refresh   Обновить OCMOD модификаторы в связанном OpenCart
+
+ template
+  template:list   Список доступных шаблонов модулей OCM
+```
+
+---
+
+## Быстрый старт: сценарии работы
+
+### 1. Создание нового модуля
+
+```bash
+# Интерактивное создание:
+ocm make:module
+
+# Или с указанием параметров в одну команду:
+ocm make:module my_super_filter --template=my_module --title="Super Filter" --ver="1.0.0"
+
+# Переходим в созданный модуль:
+cd my_super_filter
+```
+
+### 2. Привязка к установке OpenCart
+
+```bash
+ocm link /var/www/my-opencart.loc
+```
+
+### 3. Режим активной разработки
+
+```bash
+ocm dev
+```
+Команда выполнит первичную установку файлов и будет отслеживать изменения в `upload/` и `install.xml`, мгновенно отправляя их в OpenCart.
+
+### 4. Сборка архива для клиентов / маркетплейса
+
+```bash
+ocm build
+```
+Создаст чистый, готовый к загрузке в админку OpenCart архив: `my_super_filter.ocmod.zip` (содержит только `upload/` и `install.xml`).
+
+### 5. Полезные команды для OpenCart
+
+```bash
+# Очистить кэш модификаций и перекомпилировать OCMOD:
+ocm ocmod:refresh
+
+# Очистить системный кэш OpenCart:
+ocm cache:clear
+
+# Посмотреть текущий статус модуля и привязки:
+ocm status
+
+# Забрать файлы из OpenCart обратно в модуль (если правили код прямо в магазине):
+ocm return
+```
+
+---
+
+## Структура проекта модуля
+
+```
+my_module/
+├── opencart-module.json    # Метаданные модуля (название, код, версия, автор)
+├── install.xml             # OCMOD-модификатор (опционально)
+├── upload/                 # Файлы модуля для OpenCart
+│   ├── admin/
+│   │   ├── controller/
+│   │   ├── language/
+│   │   ├── model/
+│   │   └── view/
+│   └── catalog/
+└── .ocm/                   # Служебная директория OCM (создается автоматически)
+    ├── files.json          # Список отслеживаемых файлов
+    └── target              # Путь к связанному OpenCart
+```
+
+---
+
+## Шаблоны (Templates)
+
+OCM поддерживает трехуровневую систему шаблонов:
+1. **Локальные для проекта**: `./.ocm/templates/`
+2. **Пользовательские**: `~/.config/ocm/templates/`
+3. **Встроенные**: поставляются вместе с пакетом OCM
+
+Посмотреть список шаблонов:
+```bash
+ocm template:list
+```
+
+---
+
+## Тестирование
+
+```bash
+composer test
+```
+
+---
+
+## Лицензия
+
+MIT License. См. файл [LICENSE](LICENSE).

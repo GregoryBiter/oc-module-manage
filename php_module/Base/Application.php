@@ -2,17 +2,26 @@
 
 namespace Ocm\Base;
 
+use Symfony\Component\Console\Application as SymfonyApplication;
+use Symfony\Component\Console\Input\ArgvInput;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\ConsoleOutput;
+use Symfony\Component\Console\Output\OutputInterface;
+
 /**
- * Основное приложение консоли (Kernel).
+ * Основное приложение консоли OCM (Kernel).
  */
-class Application {
-    protected $commands = [];
+class Application extends SymfonyApplication {
     protected $services = [];
-    protected $name = 'OCM Manager';
-    protected $version = '1.2.0';
+    protected $customCommands = [];
+
+    const APP_NAME = 'OCM (OpenCart Module Manager)';
+    const APP_VERSION = '2.0.0';
 
     public function __construct() {
+        parent::__construct(self::APP_NAME, self::APP_VERSION);
         $this->bootstrapServices();
+        $this->registerBuiltinCommands();
     }
 
     /**
@@ -23,11 +32,32 @@ class Application {
         $config = new \Ocm\Services\ConfigService();
         $openCart = new \Ocm\Services\OpenCartService();
         $module = new \Ocm\Services\ModuleService($fileSystem, $config, $openCart);
+        $template = new \Ocm\Services\TemplateService($fileSystem);
 
         $this->services['filesystem'] = $fileSystem;
         $this->services['config'] = $config;
         $this->services['opencart'] = $openCart;
         $this->services['module'] = $module;
+        $this->services['template'] = $template;
+    }
+
+    /**
+     * Регистрация встроенных Artisan-команд.
+     */
+    protected function registerBuiltinCommands() {
+        $this->add(new \Ocm\Commands\MakeModuleCommand());
+        $this->add(new \Ocm\Commands\InitCommand());
+        $this->add(new \Ocm\Commands\InstallCommand());
+        $this->add(new \Ocm\Commands\DevCommand());
+        $this->add(new \Ocm\Commands\BuildCommand());
+        $this->add(new \Ocm\Commands\RemoveCommand());
+        $this->add(new \Ocm\Commands\ReturnCommand());
+        $this->add(new \Ocm\Commands\OcmodRefreshCommand());
+        $this->add(new \Ocm\Commands\CacheClearCommand());
+        $this->add(new \Ocm\Commands\LinkCommand());
+        $this->add(new \Ocm\Commands\StatusCommand());
+        $this->add(new \Ocm\Commands\TemplateListCommand());
+        $this->add(new \Ocm\Commands\MigrateCommand());
     }
 
     /**
@@ -38,72 +68,54 @@ class Application {
     }
 
     /**
-     * Зарегистрировать команду.
+     * Зарегистрировать команду (совместимость с Command).
      */
-    public function add(Command $command) {
-        $this->commands[$command->getName()] = $command;
-        $command->setApplication($this);
+    public function add(\Symfony\Component\Console\Command\Command $command): ?\Symfony\Component\Console\Command\Command {
+        if ($command instanceof Command) {
+            $command->setApplication($this);
+            $this->customCommands[$command->getName()] = $command;
+        }
+        return parent::add($command);
     }
 
     /**
-     * Запустить приложение.
+     * Запустить приложение. Поддерживает как $argv-массив, так и стандартный вызов.
      */
-    public function run($argv) {
-        $input = new Input($argv);
-        $output = new Output();
+    public function run(?InputInterface $input = null, ?OutputInterface $output = null): int {
+        // Поддержка передачи массива $argv: $app->run($argv)
+        $funcArgs = func_get_args();
+        if (isset($funcArgs[0]) && is_array($funcArgs[0])) {
+            $rawArgv = $funcArgs[0];
 
-        $command_name = isset($argv[1]) ? $argv[1] : 'help';
-
-        if (isset($this->commands[$command_name])) {
-            $command = $this->commands[$command_name];
-            try {
-                $command->handle($input, $output);
-            } catch (\Exception $e) {
-                $output->error($e->getMessage());
+            // Проверка запуска внешнего скрипта (legacy)
+            $commandName = isset($rawArgv[1]) ? $rawArgv[1] : '';
+            if ($commandName !== '' && strpos($commandName, '-') !== 0 && !$this->has($commandName)) {
+                $scriptPath = $this->resolveExternalScriptPath($commandName);
+                if ($scriptPath) {
+                    return $this->executeExternalScript($scriptPath);
+                }
             }
-        } else {
-            // Если команда не найдена, пробуем запустить скрипт (предыдущий функционал)
-            if ($command_name !== 'help') {
-                $this->runExternalScript($command_name, $output);
-            } else {
-                $this->showHelp($output);
-            }
+
+            $input = new ArgvInput($rawArgv);
+            $output = $output ?: new ConsoleOutput();
         }
+
+        return parent::run($input, $output);
     }
 
     /**
-     * Запуск внешнего скрипта.
+     * Найти файл внешнего скрипта по имени команды (legacy).
      */
-    protected function runExternalScript($script_name, $output) {
-        $script_path = $this->resolveExternalScriptPath($script_name);
-
-        if ($script_path === null) {
-            $output->error("Команда или скрипт '{$script_name}' не найдены.");
-            $this->showHelp($output);
-            return;
-        }
-
-        $exit_code = $this->executeExternalScript($script_path);
-
-        if ($exit_code !== 0) {
-            $output->error("Скрипт '{$script_name}' завершился с кодом {$exit_code}.");
-        }
-    }
-
-    /**
-     * Найти файл внешнего скрипта по имени команды.
-     */
-    protected function resolveExternalScriptPath($script_name) {
-        if (!defined('SCRIPT_DIR')) {
+    public function resolveExternalScriptPath($script_name) {
+        $scriptsDir = defined('SCRIPT_DIR') ? SCRIPT_DIR . '/scripts/' : dirname(dirname(__DIR__)) . '/scripts/';
+        if (!is_dir($scriptsDir)) {
             return null;
         }
 
-        $scripts_dir = SCRIPT_DIR . '/scripts/';
-        $candidates = [$scripts_dir . $script_name];
-
+        $candidates = [$scriptsDir . $script_name];
         if (pathinfo($script_name, PATHINFO_EXTENSION) === '') {
-            $candidates[] = $scripts_dir . $script_name . '.php';
-            $candidates[] = $scripts_dir . $script_name . '.sh';
+            $candidates[] = $scriptsDir . $script_name . '.php';
+            $candidates[] = $scriptsDir . $script_name . '.sh';
         }
 
         foreach ($candidates as $candidate) {
@@ -118,7 +130,7 @@ class Application {
     /**
      * Запустить найденный внешний скрипт.
      */
-    protected function executeExternalScript($script_path) {
+    public function executeExternalScript($script_path) {
         $extension = strtolower(pathinfo($script_path, PATHINFO_EXTENSION));
 
         if ($extension === 'php') {
@@ -136,38 +148,27 @@ class Application {
     }
 
     /**
-     * Вывод общей справки.
+     * Вывод общей справки (legacy поддержка).
      */
     public function showHelp($output) {
-        $output->alert("==================================================");
-        $output->alert("  {$this->name} - v{$this->version}");
-        $output->alert("==================================================");
-        $output->writeln("Использование: ocm <команда> [аргументы] [опции]");
-        $output->writeln();
-        $output->comment("Доступные команды:");
+        if ($output instanceof Output) {
+            $output->alert("==================================================");
+            $output->alert("  " . self::APP_NAME . " - v" . self::APP_VERSION);
+            $output->alert("==================================================");
+            $output->writeln("Использование: ocm <команда> [аргументы] [опции]");
+            $output->writeln();
+            $output->comment("Доступные команды:");
 
-        foreach ($this->commands as $name => $command) {
-            $output->writeln("  " . str_pad($name, 15) . " " . $command->getDescription());
-        }
-
-        // Вывод скриптов, если функция доступна
-        if (defined('SCRIPT_DIR')) {
-            $scripts_dir = SCRIPT_DIR . '/scripts/';
-            if (is_dir($scripts_dir)) {
-                $scripts = array_diff(scandir($scripts_dir), array('.', '..'));
-                if (!empty($scripts)) {
-                    $output->writeln();
-                    $output->comment("Кастомные скрипты:");
-                    foreach ($scripts as $script) {
-                        $output->writeln("  " . str_pad($script, 15) . " Запуск кастомного скрипта");
-                    }
+            foreach ($this->all() as $name => $command) {
+                if (!$command->isHidden()) {
+                    $output->writeln("  " . str_pad($name, 20) . " " . $command->getDescription());
                 }
             }
+            $output->writeln();
         }
-        $output->writeln();
     }
 
     public function getCommands() {
-        return $this->commands;
+        return $this->customCommands;
     }
 }

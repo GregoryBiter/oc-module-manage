@@ -1,0 +1,41 @@
+#!/usr/bin/env php
+<?php
+
+// Check minimum PHP version
+if (PHP_VERSION_ID < 70400) {
+    fwrite(STDERR, "[ERROR] PHP 7.4 or higher is required. Current version: " . PHP_VERSION . "\n");
+    exit(1);
+}
+
+// Locate Composer autoloader
+$autoloaderLocations = [
+    __DIR__ . '/../vendor/autoload.php',             // Local dev / git clone
+    __DIR__ . '/../../../autoload.php',             // Installed as global package or local vendor/bin
+    __DIR__ . '/../../../../autoload.php',          // Deeper vendor hierarchy
+];
+
+$autoloaderFound = false;
+foreach ($autoloaderLocations as $location) {
+    if (file_exists($location)) {
+        require_once $location;
+        $autoloaderFound = true;
+        break;
+    }
+}
+
+if (!$autoloaderFound) {
+    fwrite(STDERR, "[ERROR] Composer autoloader not found. Please run 'composer install'.\n");
+    exit(1);
+}
+
+// Set up legacy constants if not already defined
+if (!defined('SCRIPT_DIR')) {
+    define('SCRIPT_DIR', dirname(__DIR__));
+}
+if (!defined('CURRENT_DIR')) {
+    define('CURRENT_DIR', getcwd());
+}
+
+$app = new \Ocm\Base\Application();
+$exitCode = $app->run();
+exit($exitCode);

@@ -69,10 +69,10 @@ class AgentInstallCommand extends Command {
             'repo' => $input->getOption('repo'),
             'branch' => $input->getOption('branch'),
             'source' => $input->getOption('source'),
-            'symlink' => $input->getOption('symlink'),
+            'symlink' => (bool)$input->getOption('symlink'),
             'global' => $isGlobal,
             'adapters' => $input->getOption('adapters'),
-            'force' => $input->getOption('force')
+            'force' => (bool)$input->getOption('force')
         ];
 
         $sourceDesc = !empty($options['source']) ? $options['source'] : $options['repo'];

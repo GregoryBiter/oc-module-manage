@@ -200,16 +200,19 @@ ocm db:import backup.sql
 OCM умеет развертывать специализированные инструкции и скилы для AI-ассистентов (Google Antigravity, GitHub Copilot, Cursor IDE, Claude Code) прямо в рабочий проект OpenCart из репозитория `opencart_ai_agent`:
 
 ```bash
-# Установить скилы в текущий OpenCart (или в OpenCart по пути):
+# Установить скилы в текущий OpenCart (по умолчанию из https://github.com/GregoryBiter/opencart_ai_agent.git):
 ocm agent:install /var/www/my-opencart.loc
 
 # Если вы находитесь в папке модуля, OCM автоматически определит связанный OpenCart:
 ocm agent:install
 
-# Использовать локальную копию opencart_ai_agent и симлинки (удобно при разработке скилов):
+# Указать альтернативный репозиторий или ветку со скилами:
+ocm agent:install --repo=https://github.com/username/my-skills.git --branch=main
+
+# Использовать локальную копию репозитория скилов и симлинки (удобно при разработке):
 ocm agent:install --source=/path/to/opencart_ai_agent --symlink
 
-# Установить скилы глобально для текущего пользователя (~/.agents/skills):
+# Установить скилы глобально для текущего пользователя (~/.agents/skills и ~/.gemini/antigravity-cli/skills):
 ocm agent:install --global
 
 # Посмотреть статус и список установленных скилов:
@@ -218,7 +221,7 @@ ocm agent:list
 
 При установке настраиваются:
 - `AGENTS.md` — глобальные правила контекста разработки (разграничение ядра и `dev-modules/`);
-- `.agents/skills/` (`opencart3`, `ocmod`, ...) — скилы для агентов;
+- `.agents/skills/` — скилы для агентов (`opencart3`, `ocmod`, `ocm-cli` и др. из репозитория);
 - `.agents/rules/` — правила архитектуры OpenCart;
 - `.github/copilot-instructions.md` — инструкции для GitHub Copilot;
 - `.cursorrules` и `.cursor/rules/` — правила для Cursor IDE;

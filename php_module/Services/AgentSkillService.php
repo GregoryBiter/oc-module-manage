@@ -73,7 +73,7 @@ class AgentSkillService {
         $cleanUpTemp = null;
         $sourceDir = null;
 
-        // 1. Источник файлов
+        // 1. Источник файлов: локальный каталог (--source) или клонирование из Git репозитория
         if (!empty($options['source']) && is_dir($options['source'])) {
             $sourceDir = realpath($options['source']);
         } else {
@@ -106,70 +106,72 @@ class AgentSkillService {
 
             $symlink = !empty($options['symlink']) && !empty($options['source']);
 
-            // 2. Копирование / симлинк AGENTS.md
-            if (file_exists($sourceDir . '/AGENTS.md')) {
-                $destAgents = $targetPath . '/AGENTS.md';
-                $this->deployFile($sourceDir . '/AGENTS.md', $destAgents, $symlink);
-                $installed['files'][] = 'AGENTS.md';
-            }
+            if ($sourceDir) {
+                // 2. Копирование / симлинк AGENTS.md из репозитория
+                if (file_exists($sourceDir . '/AGENTS.md')) {
+                    $destAgents = $targetPath . '/AGENTS.md';
+                    $this->deployFile($sourceDir . '/AGENTS.md', $destAgents, $symlink);
+                    $installed['files'][] = 'AGENTS.md';
+                }
 
-            // 3. Копирование / симлинк .agents/ (skills и rules)
-            if (is_dir($sourceDir . '/.agents')) {
-                $destAgentsDir = $targetPath . '/.agents';
-                $this->deployDirectory($sourceDir . '/.agents', $destAgentsDir, $symlink);
+                // 3. Копирование / симлинк .agents/ (skills и rules)
+                if (is_dir($sourceDir . '/.agents')) {
+                    $destAgentsDir = $targetPath . '/.agents';
+                    $this->deployDirectory($sourceDir . '/.agents', $destAgentsDir, $symlink);
 
-                // Сбор списка установленных скилов
-                if (is_dir($destAgentsDir . '/skills')) {
-                    $skills = scandir($destAgentsDir . '/skills');
-                    foreach ($skills as $s) {
-                        if ($s !== '.' && $s !== '..' && is_dir($destAgentsDir . '/skills/' . $s)) {
-                            $installed['skills'][] = $s;
+                    // Сбор списка установленных скилов
+                    if (is_dir($destAgentsDir . '/skills')) {
+                        $skills = scandir($destAgentsDir . '/skills');
+                        foreach ($skills as $s) {
+                            if ($s !== '.' && $s !== '..' && is_dir($destAgentsDir . '/skills/' . $s)) {
+                                $installed['skills'][] = $s;
+                            }
+                        }
+                    }
+
+                    // Сбор списка правил
+                    if (is_dir($destAgentsDir . '/rules')) {
+                        $rules = scandir($destAgentsDir . '/rules');
+                        foreach ($rules as $r) {
+                            if ($r !== '.' && $r !== '..' && is_file($destAgentsDir . '/rules/' . $r)) {
+                                $installed['rules'][] = $r;
+                            }
                         }
                     }
                 }
 
-                // Сбор списка правил
-                if (is_dir($destAgentsDir . '/rules')) {
-                    $rules = scandir($destAgentsDir . '/rules');
-                    foreach ($rules as $r) {
-                        if ($r !== '.' && $r !== '..' && is_file($destAgentsDir . '/rules/' . $r)) {
-                            $installed['rules'][] = $r;
-                        }
+                // 4. Копирование .github/ (инструкции для GitHub Copilot)
+                if (is_dir($sourceDir . '/.github')) {
+                    $destGithubDir = $targetPath . '/.github';
+                    $this->deployDirectory($sourceDir . '/.github', $destGithubDir, $symlink);
+                    $installed['files'][] = '.github/copilot-instructions.md';
+                }
+
+                // 5. Копирование dev-modules/ (CONTRIBUTING.md и инструкции для модулей)
+                if (is_dir($sourceDir . '/dev-modules')) {
+                    $destDevModulesDir = $targetPath . '/dev-modules';
+                    if (!is_dir($destDevModulesDir)) {
+                        mkdir($destDevModulesDir, 0777, true);
                     }
-                }
-            }
-
-            // 4. Копирование .github/ (инструкции для GitHub Copilot)
-            if (is_dir($sourceDir . '/.github')) {
-                $destGithubDir = $targetPath . '/.github';
-                $this->deployDirectory($sourceDir . '/.github', $destGithubDir, $symlink);
-                $installed['files'][] = '.github/copilot-instructions.md';
-            }
-
-            // 5. Копирование dev-modules/ (CONTRIBUTING.md и инструкции для модулей)
-            if (is_dir($sourceDir . '/dev-modules')) {
-                $destDevModulesDir = $targetPath . '/dev-modules';
-                if (!is_dir($destDevModulesDir)) {
-                    mkdir($destDevModulesDir, 0777, true);
-                }
-                if (file_exists($sourceDir . '/dev-modules/CONTRIBUTING.md')) {
-                    $this->deployFile($sourceDir . '/dev-modules/CONTRIBUTING.md', $destDevModulesDir . '/CONTRIBUTING.md', $symlink);
-                    $installed['files'][] = 'dev-modules/CONTRIBUTING.md';
-                }
-                if (is_dir($sourceDir . '/dev-modules/opencart-instructions')) {
-                    $this->deployDirectory($sourceDir . '/dev-modules/opencart-instructions', $destDevModulesDir . '/opencart-instructions', $symlink);
-                    $installed['files'][] = 'dev-modules/opencart-instructions';
+                    if (file_exists($sourceDir . '/dev-modules/CONTRIBUTING.md')) {
+                        $this->deployFile($sourceDir . '/dev-modules/CONTRIBUTING.md', $destDevModulesDir . '/CONTRIBUTING.md', $symlink);
+                        $installed['files'][] = 'dev-modules/CONTRIBUTING.md';
+                    }
+                    if (is_dir($sourceDir . '/dev-modules/opencart-instructions')) {
+                        $this->deployDirectory($sourceDir . '/dev-modules/opencart-instructions', $destDevModulesDir . '/opencart-instructions', $symlink);
+                        $installed['files'][] = 'dev-modules/opencart-instructions';
+                    }
                 }
             }
 
             // 6. Адаптеры для других AI инструментов (Cursor, Claude Code)
             $adapters = $options['adapters'] ?? 'default';
             if ($adapters === 'all' || strpos($adapters, 'cursor') !== false) {
-                $this->configureCursorAdapter($sourceDir, $targetPath, $symlink);
+                $this->configureCursorAdapter($targetPath, $symlink);
                 $installed['adapters'][] = 'Cursor (.cursorrules & .cursor/rules/)';
             }
             if ($adapters === 'all' || strpos($adapters, 'claude') !== false) {
-                $this->configureClaudeAdapter($sourceDir, $targetPath, $symlink);
+                $this->configureClaudeAdapter($targetPath, $symlink);
                 $installed['adapters'][] = 'Claude Code (.claude/skills/)';
             }
 
@@ -200,11 +202,15 @@ class AgentSkillService {
         if (is_dir($home . '/.gemini/antigravity-cli')) {
             $targets[] = $home . '/.gemini/antigravity-cli/skills';
         }
+        if (is_dir($home . '/.gemini')) {
+            $targets[] = $home . '/.gemini/config/skills';
+        }
 
         $symlink = !empty($options['symlink']) && !empty($options['source']);
         $installed = [];
 
-        if (is_dir($sourceDir . '/.agents/skills')) {
+        // Скилы из репозитория
+        if ($sourceDir && is_dir($sourceDir . '/.agents/skills')) {
             foreach ($targets as $targetDir) {
                 if (!is_dir($targetDir)) {
                     mkdir($targetDir, 0777, true);
@@ -299,28 +305,37 @@ class AgentSkillService {
     /**
      * Настройка адаптера для Cursor IDE.
      */
-    protected function configureCursorAdapter($sourceDir, $targetPath, $symlink = false) {
-        $rulesSrc = $sourceDir . '/.agents/rules/opencart.md';
-        if (!file_exists($rulesSrc)) {
+    protected function configureCursorAdapter($targetPath, $symlink = false) {
+        $rulesDir = $targetPath . '/.agents/rules';
+        $ruleFile = null;
+        if (file_exists($rulesDir . '/opencart.md')) {
+            $ruleFile = $rulesDir . '/opencart.md';
+        } elseif (file_exists($rulesDir . '/ocm.md')) {
+            $ruleFile = $rulesDir . '/ocm.md';
+        } elseif (file_exists($targetPath . '/AGENTS.md')) {
+            $ruleFile = $targetPath . '/AGENTS.md';
+        }
+
+        if (!$ruleFile) {
             return;
         }
 
         // 1. Корень .cursorrules
-        $this->deployFile($rulesSrc, $targetPath . '/.cursorrules', $symlink);
+        $this->deployFile($ruleFile, $targetPath . '/.cursorrules', $symlink);
 
         // 2. Папка .cursor/rules/
         $cursorRulesDir = $targetPath . '/.cursor/rules';
         if (!is_dir($cursorRulesDir)) {
             mkdir($cursorRulesDir, 0777, true);
         }
-        $this->deployFile($rulesSrc, $cursorRulesDir . '/opencart.mdc', $symlink);
+        $this->deployFile($ruleFile, $cursorRulesDir . '/opencart.mdc', $symlink);
     }
 
     /**
      * Настройка адаптера для Claude Code.
      */
-    protected function configureClaudeAdapter($sourceDir, $targetPath, $symlink = false) {
-        $skillsSrc = $sourceDir . '/.agents/skills';
+    protected function configureClaudeAdapter($targetPath, $symlink = false) {
+        $skillsSrc = $targetPath . '/.agents/skills';
         if (!is_dir($skillsSrc)) {
             return;
         }

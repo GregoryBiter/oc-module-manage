@@ -53,7 +53,7 @@ class StatusCommand extends Command {
         // 2. Файлы
         $uploadFilesCount = is_dir($moduleDir) ? count($fileSystem->findAllFiles($moduleDir, $moduleDir)) : 0;
         $trackedFilesCount = count($config->loadFilesList());
-        $hasInstallXml = file_exists($currentDir . '/install.xml');
+        $ocmodFileName = $config->getOcmodFileName();
 
         $io->section('Файловая структура');
         $io->table(
@@ -61,7 +61,7 @@ class StatusCommand extends Command {
             [
                 ['Папка upload/', is_dir($moduleDir) ? "Найдена ({$uploadFilesCount} файлов)" : 'Отсутствует'],
                 ['Отслеживаемые файлы (.ocm/files.json)', "{$trackedFilesCount} файлов"],
-                ['Модификатор (install.xml)', $hasInstallXml ? 'Присутствует' : 'Отсутствует'],
+                ['Модификатор OCMOD', $ocmodFileName ? "Найден ({$ocmodFileName})" : 'Отсутствует (install.xml / index.xml)'],
             ]
         );
 

@@ -156,12 +156,41 @@ class ConfigService {
         return array_values(array_unique($paths));
     }
 
+    /**
+     * Получить путь к файлу модификатора (install.xml или index.xml).
+     */
+    public function getOcmodFilePath() {
+        $candidates = [
+            $this->currentDir . '/install.xml',
+            $this->currentDir . '/index.xml',
+            $this->currentDir . '/ocmod.xml',
+        ];
+
+        foreach ($candidates as $file) {
+            if (is_file($file)) {
+                return $file;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Получить имя файла модификатора (install.xml или index.xml).
+     */
+    public function getOcmodFileName() {
+        $path = $this->getOcmodFilePath();
+        return $path ? basename($path) : null;
+    }
+
     public function parseInstallXmlMetadata() {
-        $xmlFile = $this->currentDir . '/install.xml';
-        if (!is_file($xmlFile)) return null;
+        $xmlFile = $this->getOcmodFilePath();
+        if (!$xmlFile || !is_file($xmlFile)) return null;
 
         $xmlContent = file_get_contents($xmlFile);
         if (!$xmlContent) return null;
+
+        $fileName = basename($xmlFile);
 
         if (class_exists('\DOMDocument')) {
             $dom = new \DOMDocument('1.0', 'UTF-8');
@@ -172,6 +201,8 @@ class ConfigService {
                 };
 
                 return [
+                    'file_name' => $fileName,
+                    'file_path' => $xmlFile,
                     'xml' => $xmlContent,
                     'code' => $read('code'),
                     'name' => $read('name'),
@@ -191,6 +222,8 @@ class ConfigService {
         };
 
         return [
+            'file_name' => $fileName,
+            'file_path' => $xmlFile,
             'xml' => $xmlContent,
             'code' => $extractTag('code'),
             'name' => $extractTag('name'),

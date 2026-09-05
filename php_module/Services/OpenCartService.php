@@ -149,15 +149,37 @@ class OpenCartService {
         }
     }
 
+    public static function cleanDirectory($dir) {
+        if (!is_dir($dir)) return;
+        $items = scandir($dir);
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..' || $item === 'index.html' || $item === '.gitignore') continue;
+            $path = $dir . '/' . $item;
+            if (is_dir($path)) {
+                self::cleanDirectory($path);
+                @rmdir($path);
+            } else {
+                @unlink($path);
+            }
+        }
+    }
+
     public static function refreshModifications($target_path) {
-        $mod_dir = $target_path . '/system/storage/modification/';
-        if (is_dir($mod_dir)) {
-            echo "  Очистка кеша модификаций...\n";
-            \clean_directory($mod_dir);
+        $target_path = rtrim((string)$target_path, '/');
+        $mod_dirs = [
+            $target_path . '/system/storage/modification',
+            $target_path . '/system/modification'
+        ];
+
+        foreach ($mod_dirs as $mod_dir) {
+            if (is_dir($mod_dir)) {
+                echo "  Очистка кэша модификаций ({$mod_dir})...\n";
+                self::cleanDirectory($mod_dir);
+            }
         }
 
         if (self::runAdminModificationRefresh($target_path)) {
-            echo "  Модификаторы обновлены через admin/controller/marketplace/modification::refresh().\n";
+            echo "  Модификаторы успешно обновлены через OpenCart Modification Refresh.\n";
         } else {
             echo "  Предупреждение: не удалось выполнить admin refresh модификаторов.\n";
         }
@@ -314,7 +336,11 @@ if ($config->has('model_autoload')) {
     }
 }
 
-$action = new Action('marketplace/modification/refresh');
+$actionRoute = 'marketplace/modification/refresh';
+if (defined('DIR_APPLICATION') && is_file(DIR_APPLICATION . 'controller/extension/modification.php')) {
+    $actionRoute = 'extension/modification/refresh';
+}
+$action = new Action($actionRoute);
 $result = $action->execute($registry, []);
 
 if ($result instanceof Exception) {
@@ -350,7 +376,20 @@ SCRIPT;
     }
 
     public static function getInstallXmlPath() {
-        return CURRENT_DIR . '/install.xml';
+        $baseDir = defined('CURRENT_DIR') ? CURRENT_DIR : getcwd();
+        $candidates = [
+            $baseDir . '/install.xml',
+            $baseDir . '/index.xml',
+            $baseDir . '/ocmod.xml',
+        ];
+
+        foreach ($candidates as $file) {
+            if (is_file($file)) {
+                return $file;
+            }
+        }
+
+        return $baseDir . '/install.xml';
     }
 
     public static function parseInstallXmlMetadata() {
@@ -636,6 +675,21 @@ SCRIPT;
                     `applied_at` = NOW()
                     WHERE `version_id` = '" . (int)$exists->row['version_id'] . "'");
             }
+        }
+    }
+
+    public static function removeModificationByCode($target_path, $code) {
+        try {
+            $databaseService = new \Ocm\Services\DatabaseService();
+            $creds = $databaseService->getCredentials($target_path);
+            if (!$creds || empty($code)) return;
+
+            $pdo = $databaseService->getPdo($target_path);
+            $prefix = $creds['prefix'];
+            $stmt = $pdo->prepare("DELETE FROM `{$prefix}modification` WHERE `code` = :code");
+            $stmt->execute([':code' => $code]);
+        } catch (\Throwable $e) {
+            // Игнорируем ошибки при удалении
         }
     }
 }

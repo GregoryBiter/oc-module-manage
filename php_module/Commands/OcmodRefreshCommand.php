@@ -39,10 +39,11 @@ class OcmodRefreshCommand extends Command {
         foreach ($paths as $targetPath) {
             $io->section("Обработка OpenCart: {$targetPath}");
 
-            // Если в текущем каталоге есть install.xml, синхронизируем его в БД модификаций
-            $xmlFile = $config->getCurrentDir() . '/install.xml';
-            if (file_exists($xmlFile)) {
-                $io->text("Обновление модификатора из <info>install.xml</info> в БД...");
+            // Если в текущем каталоге есть модификатор (install.xml / index.xml), синхронизируем его в БД
+            $xmlFile = $config->getOcmodFilePath();
+            if ($xmlFile && file_exists($xmlFile)) {
+                $modName = basename($xmlFile);
+                $io->text("Обновление модификатора из <info>{$modName}</info> в БД...");
                 $dbSuccess = $module->handleOcmod($targetPath);
                 if (!$dbSuccess) {
                     $io->warning("Не удалось записать модификатор в базу данных OpenCart (проверьте настройки БД).");

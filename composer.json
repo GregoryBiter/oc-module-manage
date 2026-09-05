@@ -1,6 +1,15 @@
 {
-    "name": "gregorybiter/oc-module-manage",
-    "description": "OpenCart Module Management CLI (Artisan-like tool)",
+    "name": "gregorybiter/ocm",
+    "description": "Autonomous Artisan-like developer toolkit & CLI for OpenCart modules and extensions",
+    "keywords": [
+        "opencart",
+        "ocm",
+        "artisan",
+        "cli",
+        "ocmod",
+        "module-manager",
+        "developer-tools"
+    ],
     "type": "library",
     "license": "MIT",
     "bin": [

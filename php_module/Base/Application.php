@@ -36,6 +36,7 @@ class Application extends SymfonyApplication {
 
         $database = new \Ocm\Services\DatabaseService();
         $agent = new \Ocm\Services\AgentSkillService($fileSystem, $openCart);
+        $script = new \Ocm\Services\ScriptService($fileSystem);
 
         $this->services['filesystem'] = $fileSystem;
         $this->services['config'] = $config;
@@ -44,6 +45,7 @@ class Application extends SymfonyApplication {
         $this->services['template'] = $template;
         $this->services['database'] = $database;
         $this->services['agent'] = $agent;
+        $this->services['script'] = $script;
     }
 
     /**
@@ -74,6 +76,11 @@ class Application extends SymfonyApplication {
         // AI агенты и скилы
         $this->add(new \Ocm\Commands\AgentInstallCommand());
         $this->add(new \Ocm\Commands\AgentListCommand());
+
+        // Дополнительные скрипты (scripts/)
+        $this->add(new \Ocm\Commands\ScriptListCommand());
+        $this->add(new \Ocm\Commands\ScriptRunCommand());
+        $this->add(new \Ocm\Commands\LampCommand());
     }
 
     /**
@@ -98,22 +105,40 @@ class Application extends SymfonyApplication {
      * Запустить приложение. Поддерживает как $argv-массив, так и стандартный вызов.
      */
     public function run(?InputInterface $input = null, ?OutputInterface $output = null): int {
-        // Поддержка передачи массива $argv: $app->run($argv)
+        $rawArgv = null;
         $funcArgs = func_get_args();
         if (isset($funcArgs[0]) && is_array($funcArgs[0])) {
             $rawArgv = $funcArgs[0];
+        } elseif (isset($_SERVER['argv'])) {
+            $rawArgv = $_SERVER['argv'];
+        }
 
-            // Проверка запуска внешнего скрипта (legacy)
+        if ($rawArgv) {
+            // 1. Проверка опции --script <path>
+            $scriptOptionIndex = array_search('--script', $rawArgv);
+            if ($scriptOptionIndex !== false && isset($rawArgv[$scriptOptionIndex + 1])) {
+                $targetScript = $rawArgv[$scriptOptionIndex + 1];
+                $resolved = $this->resolveExternalScriptPath($targetScript);
+                if ($resolved) {
+                    $args = array_slice($rawArgv, $scriptOptionIndex + 2);
+                    return $this->executeExternalScript($resolved, $args);
+                }
+            }
+
+            // 2. Проверка прямого запуска скрипта: ocm <script_name> [args...]
             $commandName = isset($rawArgv[1]) ? $rawArgv[1] : '';
             if ($commandName !== '' && strpos($commandName, '-') !== 0 && !$this->has($commandName)) {
                 $scriptPath = $this->resolveExternalScriptPath($commandName);
                 if ($scriptPath) {
-                    return $this->executeExternalScript($scriptPath);
+                    $args = array_slice($rawArgv, 2);
+                    return $this->executeExternalScript($scriptPath, $args);
                 }
             }
 
-            $input = new ArgvInput($rawArgv);
-            $output = $output ?: new ConsoleOutput();
+            if (isset($funcArgs[0]) && is_array($funcArgs[0])) {
+                $input = new ArgvInput($rawArgv);
+                $output = $output ?: new ConsoleOutput();
+            }
         }
 
         return parent::run($input, $output);
@@ -123,6 +148,15 @@ class Application extends SymfonyApplication {
      * Найти файл внешнего скрипта по имени команды (legacy).
      */
     public function resolveExternalScriptPath($script_name) {
+        /** @var \Ocm\Services\ScriptService $scriptService */
+        $scriptService = $this->getService('script');
+        if ($scriptService) {
+            $path = $scriptService->resolveScriptPath($script_name);
+            if ($path) {
+                return $path;
+            }
+        }
+
         $scriptsDir = defined('SCRIPT_DIR') ? SCRIPT_DIR . '/scripts/' : dirname(dirname(__DIR__)) . '/scripts/';
         if (!is_dir($scriptsDir)) {
             return null;
@@ -146,20 +180,28 @@ class Application extends SymfonyApplication {
     /**
      * Запустить найденный внешний скрипт.
      */
-    public function executeExternalScript($script_path) {
+    public function executeExternalScript($script_path, array $args = []) {
+        /** @var \Ocm\Services\ScriptService $scriptService */
+        $scriptService = $this->getService('script');
+        if ($scriptService) {
+            return $scriptService->execute($script_path, $args);
+        }
+
         $extension = strtolower(pathinfo($script_path, PATHINFO_EXTENSION));
+        $escapedArgs = array_map('escapeshellarg', $args);
+        $argsStr = !empty($escapedArgs) ? ' ' . implode(' ', $escapedArgs) : '';
 
         if ($extension === 'php') {
-            passthru('php ' . escapeshellarg($script_path), $exit_code);
+            passthru('php ' . escapeshellarg($script_path) . $argsStr, $exit_code);
             return $exit_code;
         }
 
         if ($extension === 'sh') {
-            passthru('bash ' . escapeshellarg($script_path), $exit_code);
+            passthru('bash ' . escapeshellarg($script_path) . $argsStr, $exit_code);
             return $exit_code;
         }
 
-        passthru(escapeshellarg($script_path), $exit_code);
+        passthru(escapeshellarg($script_path) . $argsStr, $exit_code);
         return $exit_code;
     }
 

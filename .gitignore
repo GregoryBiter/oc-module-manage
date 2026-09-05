@@ -5,3 +5,4 @@
 .opencart
 .path-opencart
 .env
+tmp/

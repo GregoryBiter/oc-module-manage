@@ -227,6 +227,29 @@ ocm agent:list
 - `.cursorrules` и `.cursor/rules/` — правила для Cursor IDE;
 - `.claude/skills/` — скилы для Claude Code.
 
+### 8. Развертывание окружения и запуск скриптов (Scripts & LAMP)
+
+OCM поддерживает запуск встроенных и пользовательских скриптов (`./.ocm/scripts/`, `~/.config/ocm/scripts/`, `scripts/`):
+
+```bash
+# Быстро развернуть готовый LAMP-сервер для OpenCart (gb-lamp) в текущую папку:
+ocm lamp
+
+# Развернуть LAMP в указанную директорию (например, ./tmp или ./lamp-server):
+ocm lamp ./tmp
+
+# Посмотреть список всех доступных скриптов и их источники:
+ocm script:list
+# или коротко:
+ocm scripts
+
+# Запустить любой скрипт по имени с передачей аргументов:
+ocm script:run lamp
+ocm run test
+# Также поддерживается прямой вызов по имени:
+ocm test
+```
+
 ---
 
 ## Структура проекта модуля

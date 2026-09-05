@@ -7,6 +7,7 @@ $testClasses = [
     \Tests\Unit\Services\FileSystemServiceTest::class,
     \Tests\Unit\Services\TemplateServiceTest::class,
     \Tests\Unit\Services\DatabaseServiceTest::class,
+    \Tests\Unit\Services\ScriptServiceTest::class,
     \Tests\Unit\Services\AgentSkillServiceTest::class,
     \Tests\Unit\Base\ApplicationTest::class,
     \Tests\Integration\Commands\BuildCommandTest::class,

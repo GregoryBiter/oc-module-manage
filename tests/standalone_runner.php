@@ -7,9 +7,11 @@ $testClasses = [
     \Tests\Unit\Services\FileSystemServiceTest::class,
     \Tests\Unit\Services\TemplateServiceTest::class,
     \Tests\Unit\Services\DatabaseServiceTest::class,
+    \Tests\Unit\Services\AgentSkillServiceTest::class,
     \Tests\Unit\Base\ApplicationTest::class,
     \Tests\Integration\Commands\BuildCommandTest::class,
     \Tests\Integration\Commands\InitCommandTest::class,
+    \Tests\Integration\Commands\AgentCommandsTest::class,
 ];
 
 $passed = 0;

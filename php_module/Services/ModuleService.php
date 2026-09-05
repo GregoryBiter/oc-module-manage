@@ -124,25 +124,37 @@ class ModuleService {
     }
 
     /**
-     * Обработка install.xml.
+     * Обработка файла модификатора (install.xml / index.xml).
      */
     public function handleOcmod($targetPath) {
         $identity = $this->resolveIdentity($targetPath);
         $installXml = $identity['install_xml'];
-        
+
         if (!$installXml) return true;
+
+        $code = !empty($installXml['code']) ? $installXml['code'] : $identity['code'];
+        $name = !empty($installXml['name']) ? $installXml['name'] : $identity['name'];
+        $version = !empty($installXml['version']) ? $installXml['version'] : $identity['version'];
+        $author = !empty($installXml['author']) ? $installXml['author'] : 'Unknown';
+        $link = isset($installXml['link']) ? $installXml['link'] : '';
+
+        // Запись через DatabaseService (PDO или Docker bridge)
+        try {
+            $databaseService = new \Ocm\Services\DatabaseService();
+            if ($databaseService->syncModificationToDb($targetPath, $code, $name, $author, $version, $link, $installXml['xml'])) {
+                $this->openCart->refreshModifications($targetPath);
+                return true;
+            }
+        } catch (\Throwable $e) {
+            // Fallback через legacy OpenCart DB, если доступен
+        }
 
         $db = $this->openCart->getOpenCartDbForPath($targetPath);
         if (!$db) return false;
 
-        $code = $identity['code'];
-        $name = $identity['name'];
-        $version = $identity['version'];
-        $author = isset($installXml['author']) ? $installXml['author'] : 'Unknown';
-        $link = isset($installXml['link']) ? $installXml['link'] : '';
-
-        $db->query("DELETE FROM `" . DB_PREFIX . "modification` WHERE `code` = '" . $db->escape($code) . "'");
-        $db->query("INSERT INTO `" . DB_PREFIX . "modification` SET 
+        $dbPrefix = defined('DB_PREFIX') ? DB_PREFIX : '';
+        $db->query("DELETE FROM `" . $dbPrefix . "modification` WHERE `code` = '" . $db->escape($code) . "'");
+        $db->query("INSERT INTO `" . $dbPrefix . "modification` SET 
             `code` = '" . $db->escape($code) . "',
             `name` = '" . $db->escape($name) . "',
             `author` = '" . $db->escape($author) . "',

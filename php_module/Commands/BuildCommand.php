@@ -80,11 +80,11 @@ class BuildCommand extends Command {
                 $packedFilesCount++;
             }
 
-            // Добавляем install.xml, если он есть
-            $installXml = $currentDir . '/install.xml';
-            if (file_exists($installXml)) {
-                $zip->addFile($installXml, 'install.xml');
-                $io->text("  + <info>install.xml</info> (модификатор OCMOD)");
+            // Добавляем модификатор (install.xml или index.xml), упаковывая как install.xml
+            $ocmodFile = $config->getOcmodFilePath();
+            if ($ocmodFile && file_exists($ocmodFile)) {
+                $zip->addFile($ocmodFile, 'install.xml');
+                $io->text("  + <info>" . basename($ocmodFile) . "</info> (упакован как install.xml)");
                 $packedFilesCount++;
             }
 
@@ -164,8 +164,9 @@ class BuildCommand extends Command {
                 foreach ($uploadFiles as $file) {
                     $zip->addFile($moduleDir . '/' . $file, 'upload/' . $file);
                 }
-                if (file_exists(getcwd() . '/install.xml')) {
-                    $zip->addFile(getcwd() . '/install.xml', 'install.xml');
+                $ocmodPath = $config->getOcmodFilePath();
+                if ($ocmodPath && file_exists($ocmodPath)) {
+                    $zip->addFile($ocmodPath, 'install.xml');
                 }
                 $zip->close();
                 $output->success("Создан архив: " . basename($archivePath));

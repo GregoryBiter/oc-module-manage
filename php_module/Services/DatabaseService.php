@@ -6,6 +6,100 @@ class DatabaseService {
     protected $connections = [];
 
     /**
+     * Поиск файла docker-compose.yml для целевой папки OpenCart.
+     */
+    public function findDockerComposeFile($targetPath) {
+        $realPath = realpath($targetPath);
+        if (!$realPath) {
+            return null;
+        }
+
+        $candidates = [
+            $realPath . '/docker-compose.yml',
+            $realPath . '/docker-compose.yaml',
+            dirname($realPath) . '/docker-compose.yml',
+            dirname($realPath) . '/docker-compose.yaml',
+        ];
+
+        foreach ($candidates as $cand) {
+            if (file_exists($cand)) {
+                return $cand;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Проверка, запущен ли сервис в Docker Compose.
+     */
+    public function isDockerServiceRunning($composeFile, $serviceName) {
+        if (!$composeFile || !file_exists($composeFile)) {
+            return false;
+        }
+
+        $cmd = sprintf('docker compose -f %s ps -q %s 2>/dev/null', escapeshellarg($composeFile), escapeshellarg($serviceName));
+        $output = [];
+        $exitCode = 1;
+        exec($cmd, $output, $exitCode);
+
+        return $exitCode === 0 && !empty($output) && trim(implode('', $output)) !== '';
+    }
+
+    /**
+     * Загрузка и парсинг .env с подстановкой переменных (${VAR}).
+     */
+    public function loadEnvVars($targetPath) {
+        $realPath = realpath($targetPath);
+        if (!$realPath) {
+            return [];
+        }
+
+        $envFiles = [
+            dirname($realPath) . '/.env',
+            $realPath . '/.env'
+        ];
+
+        $vars = [];
+        foreach ($envFiles as $file) {
+            if (!file_exists($file)) {
+                continue;
+            }
+            $lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if (!$lines) continue;
+
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if ($line === '' || strpos($line, '#') === 0 || strpos($line, '=') === false) {
+                    continue;
+                }
+                list($k, $v) = explode('=', $line, 2);
+                $k = trim($k);
+                $v = trim($v, " \t\n\r\0\x0B\"'");
+                $vars[$k] = $v;
+            }
+        }
+
+        // Рекурсивное раскрытие ${VAR}
+        $changed = true;
+        $maxPasses = 5;
+        while ($changed && $maxPasses-- > 0) {
+            $changed = false;
+            foreach ($vars as $k => $v) {
+                $expanded = preg_replace_callback('/\$\{([a-zA-Z0-9_]+)\}/', function($m) use ($vars) {
+                    return $vars[$m[1]] ?? (getenv($m[1]) ?: '');
+                }, $v);
+                if ($expanded !== $v) {
+                    $vars[$k] = $expanded;
+                    $changed = true;
+                }
+            }
+        }
+
+        return $vars;
+    }
+
+    /**
      * Извлечь реквизиты подключения к БД из config.php OpenCart.
      */
     public function getCredentials($targetPath) {
@@ -19,10 +113,19 @@ class DatabaseService {
             return null;
         }
 
-        // Попытка 1: Запуск изолированного подпроцесса PHP для гарантированного считывания
+        $envVars = $this->loadEnvVars($realPath);
+        $composeFile = $this->findDockerComposeFile($realPath);
+
+        // Попытка 1: Запуск изолированного подпроцесса PHP с пробросом переменных .env
         $phpBinary = defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php';
+        $envCode = '';
+        foreach ($envVars as $k => $v) {
+            $envCode .= sprintf('$_ENV[%s] = %s; putenv(%s); ', var_export($k, true), var_export($v, true), var_export($k . '=' . $v, true));
+        }
+
         $subScript = sprintf(
-            'error_reporting(0); require %s; echo json_encode(get_defined_constants(true)["user"] ?? []);',
+            'error_reporting(0); %s require %s; echo json_encode(get_defined_constants(true)["user"] ?? []);',
+            $envCode,
             var_export($configFile, true)
         );
 
@@ -58,12 +161,21 @@ class DatabaseService {
         }
 
         $driver = $constants['DB_DRIVER'] ?? 'mysqli';
-        $hostname = $constants['DB_HOSTNAME'] ?? null;
-        $username = $constants['DB_USERNAME'] ?? null;
-        $password = $constants['DB_PASSWORD'] ?? '';
-        $database = $constants['DB_DATABASE'] ?? null;
-        $port = !empty($constants['DB_PORT']) ? (int)$constants['DB_PORT'] : 3306;
-        $prefix = $constants['DB_PREFIX'] ?? '';
+        $hostname = $constants['DB_HOSTNAME'] ?? ($envVars['OC_DB_HOST'] ?? ($envVars['MYSQL_HOST'] ?? null));
+        $username = $constants['DB_USERNAME'] ?? ($envVars['OC_DB_USER'] ?? ($envVars['MYSQL_USER'] ?? null));
+        $password = $constants['DB_PASSWORD'] ?? ($envVars['OC_DB_PASSWORD'] ?? ($envVars['MYSQL_PASSWORD'] ?? ''));
+        $database = $constants['DB_DATABASE'] ?? ($envVars['OC_DB_NAME'] ?? ($envVars['MYSQL_DATABASE'] ?? null));
+        $port = !empty($constants['DB_PORT']) ? (int)$constants['DB_PORT'] : (!empty($envVars['MYSQL_PORT']) ? (int)$envVars['MYSQL_PORT'] : 3306);
+        $prefix = $constants['DB_PREFIX'] ?? ($envVars['OC_DB_PREFIX'] ?? '');
+
+        // Если запущено на хосте (не внутри Docker), а хост указан как 'db' или имя контейнера
+        $isHost = !file_exists('/.dockerenv');
+        if ($isHost && ($hostname === 'db' || ($hostname && gethostbyname($hostname) === $hostname && $hostname !== '127.0.0.1' && $hostname !== 'localhost'))) {
+            $hostname = '127.0.0.1';
+            if (!empty($envVars['MYSQL_PORT'])) {
+                $port = (int)$envVars['MYSQL_PORT'];
+            }
+        }
 
         if (!$hostname || !$username || !$database) {
             return null;
@@ -77,7 +189,9 @@ class DatabaseService {
             'database' => $database,
             'port' => $port,
             'prefix' => (string)$prefix,
-            'target_path' => $realPath
+            'target_path' => $realPath,
+            'docker_compose' => $composeFile,
+            'env' => $envVars
         ];
     }
 
@@ -121,29 +235,94 @@ class DatabaseService {
      * Выполнить произвольный SQL-запрос.
      */
     public function query($targetPath, $sql) {
-        $pdo = $this->getPdo($targetPath);
+        $creds = $this->getCredentials($targetPath);
+        if (!$creds) {
+            throw new \RuntimeException("Не удалось получить параметры подключения к БД для {$targetPath}");
+        }
+
         $trimmedSql = trim($sql);
         $isSelect = preg_match('/^(SELECT|SHOW|DESCRIBE|EXPLAIN)/i', $trimmedSql);
 
-        if ($isSelect) {
-            $stmt = $pdo->query($sql);
-            $rows = $stmt->fetchAll();
-            $columns = [];
-            if (!empty($rows)) {
-                $columns = array_keys($rows[0]);
+        if (extension_loaded('pdo_mysql')) {
+            $pdo = $this->getPdo($targetPath);
+            if ($isSelect) {
+                $stmt = $pdo->query($sql);
+                $rows = $stmt->fetchAll();
+                $columns = [];
+                if (!empty($rows)) {
+                    $columns = array_keys($rows[0]);
+                }
+                return [
+                    'type' => 'select',
+                    'columns' => $columns,
+                    'rows' => $rows,
+                    'count' => count($rows)
+                ];
             }
+
+            $affected = $pdo->exec($sql);
             return [
-                'type' => 'select',
-                'columns' => $columns,
-                'rows' => $rows,
-                'count' => count($rows)
+                'type' => 'exec',
+                'affected' => $affected
             ];
         }
 
-        $affected = $pdo->exec($sql);
+        // Docker bridge: если на хосте нет pdo_mysql, но запущен контейнер MariaDB/MySQL
+        if (!empty($creds['docker_compose']) && $this->isDockerServiceRunning($creds['docker_compose'], 'db')) {
+            return $this->queryViaDocker($creds, $sql, $isSelect);
+        }
+
+        throw new \RuntimeException("Расширение PHP pdo_mysql не установлено на хосте, а контейнер базы данных Docker не запущен.");
+    }
+
+    /**
+     * Выполнение SQL-запроса через Docker Compose exec к сервису db.
+     */
+    public function queryViaDocker(array $creds, $sql, $isSelect = true) {
+        $cmd = sprintf(
+            'docker compose -f %s exec -T db mariadb -u %s -p%s %s --batch --raw -e %s 2>&1',
+            escapeshellarg($creds['docker_compose']),
+            escapeshellarg($creds['username']),
+            escapeshellarg($creds['password']),
+            escapeshellarg($creds['database']),
+            escapeshellarg($sql)
+        );
+
+        $output = [];
+        $exitCode = 1;
+        exec($cmd, $output, $exitCode);
+
+        if ($exitCode !== 0) {
+            throw new \RuntimeException("Ошибка выполнения SQL через Docker: " . implode("\n", $output));
+        }
+
+        if (!$isSelect) {
+            return [
+                'type' => 'exec',
+                'affected' => 1
+            ];
+        }
+
+        $columns = [];
+        $rows = [];
+        if (!empty($output)) {
+            $columns = explode("\t", array_shift($output));
+            foreach ($output as $line) {
+                if ($line === '') continue;
+                $vals = explode("\t", $line);
+                $row = [];
+                foreach ($columns as $idx => $col) {
+                    $row[$col] = $vals[$idx] ?? null;
+                }
+                $rows[] = $row;
+            }
+        }
+
         return [
-            'type' => 'exec',
-            'affected' => $affected
+            'type' => 'select',
+            'columns' => $columns,
+            'rows' => $rows,
+            'count' => count($rows)
         ];
     }
 
@@ -156,57 +335,88 @@ class DatabaseService {
             return null;
         }
 
-        $pdo = $this->getPdo($targetPath);
+        if (extension_loaded('pdo_mysql')) {
+            $pdo = $this->getPdo($targetPath);
+            $version = $pdo->query("SELECT VERSION() as v")->fetch()['v'] ?? 'Unknown';
 
-        $version = $pdo->query("SELECT VERSION() as v")->fetch()['v'] ?? 'Unknown';
+            $stmt = $pdo->prepare("
+                SELECT 
+                    COUNT(*) as table_count,
+                    ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as size_mb
+                FROM information_schema.tables 
+                WHERE table_schema = :db
+            ");
+            $stmt->execute(['db' => $creds['database']]);
+            $stats = $stmt->fetch() ?: ['table_count' => 0, 'size_mb' => 0];
 
-        // Получение размера базы данных и количества таблиц
-        $stmt = $pdo->prepare("
-            SELECT 
-                COUNT(*) as table_count,
-                ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as size_mb
-            FROM information_schema.tables 
-            WHERE table_schema = :db
-        ");
-        $stmt->execute(['db' => $creds['database']]);
-        $stats = $stmt->fetch() ?: ['table_count' => 0, 'size_mb' => 0];
+            return [
+                'database' => $creds['database'],
+                'hostname' => $creds['hostname'],
+                'port' => $creds['port'],
+                'username' => $creds['username'],
+                'prefix' => $creds['prefix'],
+                'server_version' => $version,
+                'table_count' => (int)$stats['table_count'],
+                'size_mb' => (float)$stats['size_mb'],
+            ];
+        }
 
-        return [
-            'database' => $creds['database'],
-            'hostname' => $creds['hostname'],
-            'port' => $creds['port'],
-            'username' => $creds['username'],
-            'prefix' => $creds['prefix'],
-            'server_version' => $version,
-            'table_count' => (int)$stats['table_count'],
-            'size_mb' => (float)$stats['size_mb'],
-        ];
+        // Docker fallback
+        if (!empty($creds['docker_compose']) && $this->isDockerServiceRunning($creds['docker_compose'], 'db')) {
+            $vRes = $this->queryViaDocker($creds, "SELECT VERSION() as v", true);
+            $version = $vRes['rows'][0]['v'] ?? 'Unknown';
+
+            $sql = sprintf(
+                "SELECT COUNT(*) as table_count, ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) as size_mb FROM information_schema.tables WHERE table_schema = '%s'",
+                addslashes($creds['database'])
+            );
+            $sRes = $this->queryViaDocker($creds, $sql, true);
+            $stats = $sRes['rows'][0] ?? ['table_count' => 0, 'size_mb' => 0];
+
+            return [
+                'database' => $creds['database'],
+                'hostname' => $creds['hostname'],
+                'port' => $creds['port'],
+                'username' => $creds['username'],
+                'prefix' => $creds['prefix'],
+                'server_version' => $version,
+                'table_count' => (int)($stats['table_count'] ?? 0),
+                'size_mb' => (float)($stats['size_mb'] ?? 0),
+            ];
+        }
+
+        return null;
     }
 
     /**
      * Получить список таблиц с префиксом или фильтром.
      */
     public function getTables($targetPath, $filterPrefix = null) {
-        $pdo = $this->getPdo($targetPath);
         $creds = $this->getCredentials($targetPath);
+        if (!$creds) {
+            return [];
+        }
 
         $sql = "SELECT table_name, table_rows, round((data_length + index_length) / 1024, 2) as size_kb 
                 FROM information_schema.tables 
-                WHERE table_schema = :db";
+                WHERE table_schema = '" . addslashes($creds['database']) . "'";
 
         if ($filterPrefix) {
-            $sql .= " AND table_name LIKE :prefix";
+            $sql .= " AND table_name LIKE '" . addslashes($filterPrefix) . "%'";
         }
         $sql .= " ORDER BY table_name ASC";
 
-        $stmt = $pdo->prepare($sql);
-        $params = ['db' => $creds['database']];
-        if ($filterPrefix) {
-            $params['prefix'] = $filterPrefix . '%';
+        if (extension_loaded('pdo_mysql')) {
+            $pdo = $this->getPdo($targetPath);
+            return $pdo->query($sql)->fetchAll();
         }
-        $stmt->execute($params);
 
-        return $stmt->fetchAll();
+        if (!empty($creds['docker_compose']) && $this->isDockerServiceRunning($creds['docker_compose'], 'db')) {
+            $res = $this->queryViaDocker($creds, $sql, true);
+            return $res['rows'];
+        }
+
+        return [];
     }
 
     /**
@@ -221,7 +431,35 @@ class DatabaseService {
         $tables = $options['tables'] ?? [];
         $isGzip = !empty($options['gzip']) || substr($outputFile, -3) === '.gz';
 
-        // Вариант А: использование системной утилиты mysqldump, если она доступна
+        // Вариант 1: Docker Compose mariadb-dump (если проект в Docker и контейнер db запущен)
+        if (!empty($creds['docker_compose']) && $this->isDockerServiceRunning($creds['docker_compose'], 'db')) {
+            $tableArgs = '';
+            if (!empty($tables)) {
+                foreach ($tables as $tbl) {
+                    $tableArgs .= ' ' . escapeshellarg($tbl);
+                }
+            }
+
+            $cmd = sprintf(
+                'docker compose -f %s exec -T db mariadb-dump -u %s -p%s --single-transaction --quick --add-drop-table %s%s',
+                escapeshellarg($creds['docker_compose']),
+                escapeshellarg($creds['username']),
+                escapeshellarg($creds['password']),
+                escapeshellarg($creds['database']),
+                $tableArgs
+            );
+
+            if ($isGzip) {
+                $cmd .= ' | gzip';
+            }
+            $cmd .= ' > ' . escapeshellarg($outputFile);
+
+            $exitCode = 1;
+            system($cmd, $exitCode);
+            return $exitCode === 0;
+        }
+
+        // Вариант 2: использование системной утилиты mysqldump, если она доступна
         if ($this->hasCommand('mysqldump')) {
             $cmd = sprintf(
                 'mysqldump -h %s -P %d -u %s',
@@ -254,7 +492,7 @@ class DatabaseService {
             return $exitCode === 0;
         }
 
-        // Вариант Б: Встроенный экспорт через PDO (чистый PHP)
+        // Вариант 3: Встроенный экспорт через PDO (чистый PHP)
         return $this->dumpViaPdo($targetPath, $outputFile, $tables, $isGzip);
     }
 
@@ -348,7 +586,24 @@ class DatabaseService {
 
         $isGzip = substr($inputFile, -3) === '.gz';
 
-        // Вариант А: через системную утилиту mysql
+        // Вариант 1: Docker Compose import (если контейнер db запущен)
+        if (!empty($creds['docker_compose']) && $this->isDockerServiceRunning($creds['docker_compose'], 'db')) {
+            $cmd = sprintf(
+                '%s %s | docker compose -f %s exec -T db mariadb -u %s -p%s %s',
+                $isGzip ? 'gunzip -c' : 'cat',
+                escapeshellarg($inputFile),
+                escapeshellarg($creds['docker_compose']),
+                escapeshellarg($creds['username']),
+                escapeshellarg($creds['password']),
+                escapeshellarg($creds['database'])
+            );
+
+            $exitCode = 1;
+            system($cmd, $exitCode);
+            return $exitCode === 0;
+        }
+
+        // Вариант 2: через системную утилиту mysql
         if ($this->hasCommand('mysql')) {
             $cmd = sprintf(
                 '%s %s | mysql -h %s -P %d -u %s',
@@ -370,7 +625,7 @@ class DatabaseService {
             return $exitCode === 0;
         }
 
-        // Вариант Б: через PDO
+        // Вариант 3: через PDO
         $pdo = $this->getPdo($targetPath);
         $fp = $isGzip ? gzopen($inputFile, 'r') : fopen($inputFile, 'r');
         if (!$fp) {
@@ -398,16 +653,108 @@ class DatabaseService {
     }
 
     /**
+     * Синхронизация OCMOD модификатора в базу данных.
+     */
+    public function syncModificationToDb($targetPath, $code, $name, $author, $version, $link, $xmlContent) {
+        $creds = $this->getCredentials($targetPath);
+        if (!$creds) {
+            return false;
+        }
+
+        $prefix = $creds['prefix'];
+
+        if (extension_loaded('pdo_mysql')) {
+            $pdo = $this->getPdo($targetPath);
+            $delStmt = $pdo->prepare("DELETE FROM `{$prefix}modification` WHERE `code` = :code");
+            $delStmt->execute([':code' => $code]);
+
+            $insertStmt = $pdo->prepare("
+                INSERT INTO `{$prefix}modification` 
+                (`code`, `name`, `author`, `version`, `link`, `xml`, `status`, `date_added`) 
+                VALUES 
+                (:code, :name, :author, :version, :link, :xml, 1, NOW())
+            ");
+            return $insertStmt->execute([
+                ':code' => $code,
+                ':name' => $name,
+                ':author' => $author,
+                ':version' => $version,
+                ':link' => $link,
+                ':xml' => $xmlContent
+            ]);
+        }
+
+        if (!empty($creds['docker_compose']) && $this->isDockerServiceRunning($creds['docker_compose'], 'db')) {
+            $hexXml = '0x' . bin2hex($xmlContent);
+            $sql = sprintf(
+                "DELETE FROM `%smodification` WHERE `code` = '%s'; INSERT INTO `%smodification` (`code`, `name`, `author`, `version`, `link`, `xml`, `status`, `date_added`) VALUES ('%s', '%s', '%s', '%s', '%s', %s, 1, NOW());",
+                $prefix,
+                addslashes($code),
+                $prefix,
+                addslashes($code),
+                addslashes($name),
+                addslashes($author),
+                addslashes($version),
+                addslashes($link),
+                $hexXml
+            );
+            $this->queryViaDocker($creds, $sql, false);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Удаление OCMOD модификатора из базы данных.
+     */
+    public function removeModificationFromDb($targetPath, $code) {
+        $creds = $this->getCredentials($targetPath);
+        if (!$creds) {
+            return false;
+        }
+
+        $prefix = $creds['prefix'];
+
+        if (extension_loaded('pdo_mysql')) {
+            $pdo = $this->getPdo($targetPath);
+            $delStmt = $pdo->prepare("DELETE FROM `{$prefix}modification` WHERE `code` = :code");
+            return $delStmt->execute([':code' => $code]);
+        }
+
+        if (!empty($creds['docker_compose']) && $this->isDockerServiceRunning($creds['docker_compose'], 'db')) {
+            $sql = sprintf("DELETE FROM `%smodification` WHERE `code` = '%s';", $prefix, addslashes($code));
+            $this->queryViaDocker($creds, $sql, false);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Запустить интерактивную консоль mysql.
      */
     public function launchTerminal($targetPath) {
-        if (!$this->hasCommand('mysql')) {
-            throw new \RuntimeException("Системный клиент 'mysql' не найден в PATH. Установите mysql-client.");
-        }
-
         $creds = $this->getCredentials($targetPath);
         if (!$creds) {
             throw new \RuntimeException("Не удалось получить реквизиты БД");
+        }
+
+        // Вариант 1: через Docker Compose
+        if (!empty($creds['docker_compose']) && $this->isDockerServiceRunning($creds['docker_compose'], 'db')) {
+            $cmd = sprintf(
+                'docker compose -f %s exec db mariadb -u %s -p%s %s',
+                escapeshellarg($creds['docker_compose']),
+                escapeshellarg($creds['username']),
+                escapeshellarg($creds['password']),
+                escapeshellarg($creds['database'])
+            );
+            passthru($cmd, $exitCode);
+            return $exitCode;
+        }
+
+        if (!$this->hasCommand('mysql')) {
+            throw new \RuntimeException("Системный клиент 'mysql' не найден в PATH, и контейнер Docker db не запущен. Установите mysql-client.");
         }
 
         $cmd = sprintf(

@@ -91,12 +91,18 @@ class InstallCommand extends Command {
             $io->text("  Скопировано файлов: <info>{$copiedCount}</info>");
 
             if (!$skipDb) {
-                // Обработка install.xml (OCMOD)
-                try {
-                    $module->handleOcmod($targetPath);
-                    $io->text("  Модификаторы OCMOD синхронизированы.");
-                } catch (\Throwable $e) {
-                    $io->warning("Предупреждение при установке OCMOD: " . $e->getMessage());
+                // Обработка модификатора (install.xml / index.xml)
+                $ocmodFile = $config->getOcmodFilePath();
+                if ($ocmodFile) {
+                    $modName = basename($ocmodFile);
+                    try {
+                        $module->handleOcmod($targetPath);
+                        $io->text("  Модификатор <info>{$modName}</info> записан в БД и скомпилирован.");
+                    } catch (\Throwable $e) {
+                        $io->warning("Предупреждение при установке {$modName}: " . $e->getMessage());
+                    }
+                } else {
+                    $io->text("  Модификатор OCMOD не обнаружен (install.xml или index.xml отсутствует).");
                 }
 
                 // Запись в базу (ocm_*)

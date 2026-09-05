@@ -46,11 +46,14 @@ class DevCommand extends Command {
         $installCmd->execute($input, $output);
 
         $moduleDir = $config->getModuleDir();
-        $ocmodFile = $config->getCurrentDir() . '/install.xml';
+        $ocmodFile = $config->getOcmodFilePath();
+        $ocmodFileName = $ocmodFile ? basename($ocmodFile) : null;
+        $ocmodMtime = ($ocmodFile && file_exists($ocmodFile)) ? filemtime($ocmodFile) : 0;
 
         $io->section('Режим наблюдения активирован (Ctrl+C для выхода)');
         $io->text([
             "Папка модуля: <info>{$moduleDir}</info>",
+            "Модификатор OCMOD: " . ($ocmodFileName ? "<info>{$ocmodFileName}</info> (активен)" : "<comment>не найден (install.xml или index.xml)</comment>"),
             "Целевые установки OpenCart:",
             " - " . implode("\n - ", $opencartPaths)
         ]);
@@ -64,28 +67,40 @@ class DevCommand extends Command {
             }
         }
 
-        $ocmodMtime = file_exists($ocmodFile) ? filemtime($ocmodFile) : 0;
-
         // Основной цикл слежения
         while (true) {
             clearstatcache();
 
-            // 1. Проверка install.xml
-            if (file_exists($ocmodFile)) {
-                $currentOcmodMtime = filemtime($ocmodFile);
-                if ($currentOcmodMtime !== $ocmodMtime) {
-                    $io->text("\n<comment>[" . date('H:i:s') . "] Изменен install.xml. Обновление модификаторов...</comment>");
+            // 1. Проверка модификатора (install.xml / index.xml)
+            $currentOcmodFile = $config->getOcmodFilePath();
+            if ($currentOcmodFile && file_exists($currentOcmodFile)) {
+                $currentOcmodMtime = filemtime($currentOcmodFile);
+                if ($currentOcmodMtime !== $ocmodMtime || $currentOcmodFile !== $ocmodFile) {
+                    $modName = basename($currentOcmodFile);
+                    $io->text("\n<comment>[" . date('H:i:s') . "] Обнаружены изменения в {$modName}. Обновление модификатора в OpenCart...</comment>");
                     foreach ($opencartPaths as $targetPath) {
                         try {
                             $module->handleOcmod($targetPath);
                             $module->syncWithDb($targetPath, array_keys($filesMap));
-                            $io->text("  Синхронизирован модификатор для: {$targetPath}");
+                            $io->success("Модификатор {$modName} успешно обновлен в БД и скомпилирован для {$targetPath}!");
                         } catch (\Throwable $e) {
                             $io->warning("Ошибка обновления модификатора: " . $e->getMessage());
                         }
                     }
+                    $ocmodFile = $currentOcmodFile;
                     $ocmodMtime = $currentOcmodMtime;
                 }
+            } elseif ($ocmodFile && !file_exists($ocmodFile)) {
+                $io->text("\n<comment>[" . date('H:i:s') . "] Файл модификатора удален. Очистка из OpenCart...</comment>");
+                foreach ($opencartPaths as $targetPath) {
+                    try {
+                        $identity = $module->resolveIdentity($targetPath);
+                        \Ocm\Services\OpenCartService::removeModificationByCode($targetPath, $identity['code']);
+                        \Ocm\Services\OpenCartService::refreshModifications($targetPath);
+                    } catch (\Throwable $e) {}
+                }
+                $ocmodFile = null;
+                $ocmodMtime = 0;
             }
 
             // 2. Проверка файлов в upload/

@@ -48,4 +48,26 @@ class BuildCommandTest extends CommandTestCase {
         $this->assertNotFalse($zip->locateName('install.xml'));
         $zip->close();
     }
+
+    public function testHandlePackagesIndexXmlAsInstallXml() {
+        mkdir($this->testDir . '/upload/admin/model', 0777, true);
+        file_put_contents($this->testDir . '/upload/admin/model/test.php', '<?php // model');
+        file_put_contents($this->testDir . '/index.xml', '<modification><code>index_mod</code></modification>');
+
+        $command = new BuildCommand();
+        $command->setApplication($this->app);
+
+        $input = new Input(['ocm', 'build', '-a']);
+        $command->handle($input, $this->output);
+
+        $moduleName = basename($this->testDir);
+        $zipPath = $this->testDir . "/{$moduleName}.ocmod.zip";
+        $this->assertTrue(file_exists($zipPath));
+
+        $zip = new \ZipArchive();
+        $this->assertTrue($zip->open($zipPath) === true);
+        $this->assertNotFalse($zip->locateName('upload/admin/model/test.php'));
+        $this->assertNotFalse($zip->locateName('install.xml'));
+        $zip->close();
+    }
 }

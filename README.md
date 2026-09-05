@@ -21,7 +21,7 @@
 ### 1. Глобальная установка через Composer (Рекомендуется)
 
 ```bash
-composer global require gregorybiter/oc-module-manage
+composer global require gregorybiter/ocm-cli
 ```
 
 > [!TIP]
@@ -33,7 +33,7 @@ composer global require gregorybiter/oc-module-manage
 
 Обновление утилиты до последней версии:
 ```bash
-composer global update gregorybiter/oc-module-manage
+composer global update gregorybiter/ocm-cli
 ```
 
 ---
@@ -43,7 +43,7 @@ composer global update gregorybiter/oc-module-manage
 Вы можете установить OCM как dev-зависимость прямо в репозиторий вашего модуля:
 
 ```bash
-composer require --dev gregorybiter/oc-module-manage
+composer require --dev gregorybiter/ocm-cli
 ```
 
 И запускать через:
@@ -56,7 +56,7 @@ composer require --dev gregorybiter/oc-module-manage
 ### 3. Установка через Shell-скрипт (Legacy)
 
 ```bash
-curl -sL https://raw.githubusercontent.com/GregoryBiter/oc-module-manage/master/install.sh | bash
+curl -sL https://raw.githubusercontent.com/GregoryBiter/ocm-cli/main/install.sh | bash
 ```
 
 ---

@@ -62,4 +62,27 @@ class ConfigServiceTest extends TestCase {
         $this->assertTrue($this->config->matchWildcardPattern('admin/view/**/test.twig', 'admin/view/template/extension/test.twig'));
         $this->assertFalse($this->config->matchWildcardPattern('admin/*.php', 'catalog/test.php'));
     }
+
+    public function testFindsAndParsesIndexXml() {
+        $xmlContent = '<?xml version="1.0" encoding="utf-8"?><modification><code>my_ocmod_code</code><name>My OCMOD Name</name><version>2.1.0</version><author>Author Name</author></modification>';
+        file_put_contents($this->testDir . '/index.xml', $xmlContent);
+
+        $this->assertSame($this->testDir . '/index.xml', $this->config->getOcmodFilePath());
+        $this->assertSame('index.xml', $this->config->getOcmodFileName());
+
+        $parsed = $this->config->parseInstallXmlMetadata();
+        $this->assertNotNull($parsed);
+        $this->assertSame('index.xml', $parsed['file_name']);
+        $this->assertSame('my_ocmod_code', $parsed['code']);
+        $this->assertSame('My OCMOD Name', $parsed['name']);
+        $this->assertSame('2.1.0', $parsed['version']);
+    }
+
+    public function testInstallXmlTakesPriorityOverIndexXml() {
+        file_put_contents($this->testDir . '/install.xml', '<modification><code>install_code</code></modification>');
+        file_put_contents($this->testDir . '/index.xml', '<modification><code>index_code</code></modification>');
+
+        $this->assertSame($this->testDir . '/install.xml', $this->config->getOcmodFilePath());
+        $this->assertSame('install.xml', $this->config->getOcmodFileName());
+    }
 }

@@ -749,8 +749,7 @@ class DatabaseService {
                 escapeshellarg($creds['password']),
                 escapeshellarg($creds['database'])
             );
-            passthru($cmd, $exitCode);
-            return $exitCode;
+            return $this->runInteractiveCommand($cmd);
         }
 
         if (!$this->hasCommand('mysql')) {
@@ -770,8 +769,28 @@ class DatabaseService {
 
         $cmd .= ' ' . escapeshellarg($creds['database']);
 
-        passthru($cmd, $exitCode);
-        return $exitCode;
+        return $this->runInteractiveCommand($cmd);
+    }
+
+    /**
+     * Запустить интерактивную команду, сохранив доступ дочернего процесса к TTY.
+     *
+     * passthru() не всегда корректно передаёт стандартный ввод docker compose exec,
+     * из-за чего клиент MariaDB открывается без приглашения и не принимает команды.
+     */
+    protected function runInteractiveCommand($cmd) {
+        $pipes = [];
+        $process = proc_open($cmd, [
+            0 => STDIN,
+            1 => STDOUT,
+            2 => STDERR,
+        ], $pipes);
+
+        if (!is_resource($process)) {
+            throw new \RuntimeException('Не удалось запустить интерактивный клиент базы данных.');
+        }
+
+        return proc_close($process);
     }
 
     protected function hasCommand($cmd) {
